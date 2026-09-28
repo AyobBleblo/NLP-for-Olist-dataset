@@ -13,6 +13,9 @@ dependencies = [
     "transformers>=5.17.0",
     "scikit-learn>=1.6.0",
     "tqdm>=4.67.0",
+    "django>=6.1.1",
+    "djangorestframework>=3.18.1",
+    "django-filter>=26.1",
 ]
 
 [[tool.uv.index]]
