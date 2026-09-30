@@ -54,7 +54,7 @@ flowchart TD
 
 Our recommendation system combines **three signals** in a weighted hybrid:
 
-1. **Collaborative Filtering (CF)** — SVD matrix factorization (`models/svd_cf.pkl`)
+1. **Collaborative Filtering (CF)** — SVD matrix **Colab Part 2** factorization (`models/svd_cf.pkl`)
 2. **Content-Based Filtering (CBF)** — TF-IDF + numeric similarity from **Colab Part 3** (`models/processed/cbf_precomputed.npz`)
 3. **NLP Sentiment** — DistilBERT review sentiment scores
 

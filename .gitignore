@@ -9,13 +9,26 @@ wheels/
 # Environment & secrets
 .env
 capstone_project.ipynb
-# Large datasets & local model checkpoints
-/data/
-/models/
 
-# Local database
-*.sqlite3
+# Large datasets (raw CSVs — too large for git)
+/data/
+
+# DistilBERT fine-tuned checkpoints (255 MB each — share via Google Drive)
+/models/best_model/
+/models/best_model_binary/
+
+# Training logs (auto-generated, not needed in repo)
+/models/training_log*.json
+/models/evaluation_results*.json
+
+# Smaller ML model files ARE tracked via Git LFS:
+#   models/svd_cf.pkl              (~30 MB)
+#   models/processed/              (~3 MB total)
+# Do NOT add /models/ as a blanket ignore.
+
+# Local database (recreated via seed commands)
 db.sqlite3
+*.sqlite3
 
 # Virtual environment & IDE
 .venv/
@@ -24,5 +37,3 @@ db.sqlite3
 # Agent configuration & workflows
 .agents/
 .agent/
-
-*.md
