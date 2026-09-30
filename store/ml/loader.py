@@ -28,12 +28,44 @@ MODELS MANAGED HERE
 from __future__ import annotations
 
 import logging
+import os
+import pickle
 from typing import TYPE_CHECKING
 
 import torch
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Collaborative Filtering (SVD) model singleton
+# ---------------------------------------------------------------------------
+
+_cf_model = None
+
+
+def get_cf_model():
+    """
+    Return the cached Collaborative Filtering model (surprise.SVD),
+    loading it from settings.CF_MODEL_PATH on first call.
+    Returns None if the file does not exist yet.
+    """
+    global _cf_model
+    if _cf_model is None:
+        model_path = getattr(settings, "CF_MODEL_PATH", "")
+        if model_path and os.path.exists(model_path):
+            try:
+                logger.info("Loading Collaborative Filtering SVD model from %s", model_path)
+                with open(model_path, "rb") as f:
+                    _cf_model = pickle.load(f)
+                logger.info("Collaborative Filtering SVD model loaded successfully.")
+            except Exception as exc:
+                logger.error("Failed to load CF model from %s: %s", model_path, exc)
+                _cf_model = None
+        else:
+            logger.info("CF model file not found at %s (will use popularity fallback)", model_path)
+    return _cf_model
+
 
 # ---------------------------------------------------------------------------
 # Sentiment predictor singleton

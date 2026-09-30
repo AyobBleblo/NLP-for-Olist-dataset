@@ -8,7 +8,7 @@ wheels/
 
 # Environment & secrets
 .env
-
+capstone_project.ipynb
 # Large datasets & local model checkpoints
 /data/
 /models/

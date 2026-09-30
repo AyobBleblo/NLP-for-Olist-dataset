@@ -98,3 +98,7 @@ TRANSLATION_TGT_LANG = "eng_Latn"   # English
 TRANSLATION_GPU_BATCH_SIZE = 16
 TRANSLATION_CPU_BATCH_SIZE = 8
 SENTIMENT_BATCH_SIZE = 32
+
+# Collaborative Filtering model (SVD trained via scikit-surprise)
+CF_MODEL_PATH = str(BASE_DIR / "models" / "svd_cf.pkl")
+

@@ -16,6 +16,7 @@ dependencies = [
     "django>=6.1.1",
     "djangorestframework>=3.18.1",
     "django-filter>=26.1",
+    "scikit-surprise>=1.1.5",
 ]
 
 [[tool.uv.index]]
