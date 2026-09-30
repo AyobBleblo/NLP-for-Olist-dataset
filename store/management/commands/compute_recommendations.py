@@ -3,42 +3,42 @@ store/management/commands/compute_recommendations.py
 ====================================================
 Management command: python manage.py compute_recommendations
 
-Computes Collaborative Filtering recommendations using the SVD model
-(trained in Google Colab / scikit-surprise and saved at models/svd_cf.pkl).
-If the SVD model is not yet placed in models/, it gracefully falls back to
-the Popularity baseline (ranked by total_purchases), with an optional
-NLP review sentiment boost.
+Computes hybrid recommendations combining:
+  1. Collaborative Filtering — SVD model (scikit-surprise, models/svd_cf.pkl)
+  2. Content-Based Filtering — TF-IDF + numeric similarity from Colab Part 3
+     (models/processed/tfidf_matrix.npz + products_features.parquet +
+      tfidf_row_index.parquet)
+  3. NLP Sentiment boost  — avg_sentiment_score from DistilBERT reviews
+  4. Diversity cap        — at most MAX_PER_CAT products per category
 
-Algorithm (v2 — diversity-aware hybrid)
-----------------------------------------
-For each candidate product:
+Algorithm (v3 — true CBF hybrid)
+----------------------------------
+For each candidate product p and customer u:
 
-  1. BASE SCORE (SVD decomposition — no svd.predict() call):
-       score = BASE + qi·pu + ALPHA * bi
-     where BASE=3.0, ALPHA=0.5 are module-level constants (overridable via
-     settings.RECSYS_ALPHA / settings.RECSYS_BASE).  Using ALPHA<1 dampens
-     the product-bias term so user taste (qi·pu) has relative weight.
+  1. SVD SCORE:
+       svd_score = BASE + qi·pu + ALPHA * bi
+     Cold-start user  → pu=zero
+     Unknown product  → popularity fallback (≤ 3.0)
 
-  2. COLD-START / UNKNOWN PRODUCT FALLBACK:
-     - Unknown user (not in trainset): pu=zero vector, bu=0, treated same.
-     - Unknown product (not in trainset): popularity fallback score
-         1.0 + min(total_purchases / 10, 2.0)
-       This never exceeds ~3.0, so it won't outrank any known SVD score.
+  2. CBF SCORE (if models/processed/ artifacts are loaded):
+       cbf_score = text_weight * cosine(tfidf_matrix[p], user_profile_text)
+                 + (1 - text_weight) * numeric_sim(num_matrix[p], user_profile_num)
+     user_profile_text = mean TF-IDF row over purchased products
+     user_profile_num  = mean numeric row over purchased products
+     numeric_sim = 1 / (1 + scaled_euclidean)
+     Falls back to category-affinity boost if artifacts missing.
 
-  3. CATEGORY AFFINITY BOOST (content-based):
-       score += BETA * affinity(category)
-     affinity = fraction of customer's purchase history in that category.
-     BETA default 1.0, overridable via settings.RECSYS_BETA.
+  3. SENTIMENT BOOST:
+       score += GAMMA * (avg_sentiment_score - 0.5)   [only if reviews exist]
 
-  4. SENTIMENT BOOST (only when product has reviews):
-       score += GAMMA * (avg_sentiment_score - 0.5)
-     GAMMA default 0.3.  Products with no reviews (avg_sentiment_score=0.0
-     AND review_count=0) are skipped — 0.0 is NOT treated as negative.
+  4. FINAL SCORE:
+       score = SVD_WEIGHT * svd_score + CBF_WEIGHT * cbf_score + sentiment_boost
 
-  5. DIVERSITY (per category cap):
-     After sorting by score, picks top-N enforcing at most MAX_PER_CAT
-     products per category (default 2). Remaining slots are filled from
-     the leftover ranked list.
+  5. DIVERSITY CAP:
+     At most MAX_PER_CAT (default 2) products from any single category.
+
+Constants (overridable via settings.RECSYS_*):
+  ALPHA=0.5, BASE=3.0, SVD_WEIGHT=0.6, CBF_WEIGHT=0.4, GAMMA=0.3, MAX_PER_CAT=2
 
 Usage
 -----
@@ -55,12 +55,13 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-import numpy as np
+import scipy.sparse as _sp
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from store.ml.loader import get_cf_model
+import numpy as np
+from store.ml.loader import get_cbf_model, get_cf_model
 from store.models import Customer, OrderItem, Product, Recommendation
 
 if TYPE_CHECKING:
@@ -79,7 +80,11 @@ ALPHA: float = float(getattr(settings, "RECSYS_ALPHA", 0.5))
 #: Additive baseline so SVD scores land in a reasonable absolute range.
 BASE: float = float(getattr(settings, "RECSYS_BASE", 3.0))
 
-#: Weight for the category-affinity content-based boost.
+#: Blend weights for CF vs CBF signal.
+SVD_WEIGHT: float = float(getattr(settings, "RECSYS_SVD_WEIGHT", 0.6))
+CBF_WEIGHT: float = float(getattr(settings, "RECSYS_CBF_WEIGHT", 0.4))
+
+#: Legacy category-affinity weight (used when CBF artifacts are missing).
 BETA: float = float(getattr(settings, "RECSYS_BETA", 1.0))
 
 #: Weight for the sentiment boost/penalty.
@@ -96,14 +101,8 @@ MAX_PER_CAT: int = int(getattr(settings, "RECSYS_MAX_PER_CAT", 2))
 
 def _build_category_affinity(customer: Customer) -> dict[int | None, float]:
     """
-    Compute the customer's per-category purchase distribution.
-
-    Returns a dict mapping category_id -> affinity in [0, 1], where affinity
-    is the fraction of the customer's purchases belonging to that category.
-    The dict includes a None key for products with no category.
-
-    This is precomputed once per customer and passed into the scoring loop —
-    no per-product DB queries inside the scoring loop.
+    Fallback CBF: compute the customer's per-category purchase distribution.
+    Used when CBF TF-IDF artifacts are not available.
     """
     items = (
         OrderItem.objects.filter(order__customer=customer)
@@ -115,11 +114,73 @@ def _build_category_affinity(customer: Customer) -> dict[int | None, float]:
     for cat_id in items:
         counts[cat_id] += 1
         total += 1
-
     if total == 0:
         return {}
-
     return {cat_id: count / total for cat_id, count in counts.items()}
+
+
+def _build_cbf_user_profile(
+    purchased_external_ids: list[str],
+    cbf: dict,
+) -> tuple["np.ndarray | None", "np.ndarray | None"]:
+    """
+    Build a user content profile as the mean of purchased products' TF-IDF
+    and numeric vectors.  Mirrors notebook cell 75 ContentBasedRecommender.
+
+    Args:
+        purchased_external_ids: list of product external_ids the user bought.
+        cbf: dict returned by get_cbf_model().
+
+    Returns:
+        (text_profile, num_profile) as numpy arrays, or (None, None) if no
+        purchased product is in the CBF index.
+    """
+    pid_to_idx = cbf["pid_to_idx"]
+    tfidf_matrix = cbf["tfidf_matrix"]
+    num_matrix = cbf["num_matrix"]
+
+    idx_list = [pid_to_idx[eid] for eid in purchased_external_ids if eid in pid_to_idx]
+    if not idx_list:
+        return None, None
+
+    # Text profile: mean of sparse TF-IDF rows, then L2-normalise
+    text_sum = tfidf_matrix[idx_list].mean(axis=0)          # dense (1, vocab)
+    text_arr = np.asarray(text_sum)                          # shape (1, vocab)
+    norm = np.linalg.norm(text_arr)
+    text_profile = (text_arr / norm) if norm > 0 else text_arr  # shape (1, vocab)
+
+    # Numeric profile: mean of numeric rows
+    num_profile = num_matrix[idx_list].mean(axis=0)          # shape (5,)
+
+    return text_profile, num_profile
+
+
+def _cbf_scores_all(
+    cbf: dict,
+    text_profile: "np.ndarray",
+    num_profile: "np.ndarray",
+) -> "np.ndarray":
+    """
+    Compute similarity of every product in the CBF index to the user profile.
+    Mirrors notebook cb_scores_for_vectors().
+
+    score[i] = text_weight * cosine(tfidf[i], text_profile)
+             + (1 - text_weight) * 1 / (1 + scaled_euclidean(num[i], num_profile))
+    """
+    import numpy as np
+    tfidf_matrix = cbf["tfidf_matrix"]
+    num_matrix   = cbf["num_matrix"]
+    tw = cbf["text_weight"]
+
+    # Cosine similarity (TF-IDF rows are already L2-normalised in the notebook)
+    text_sim = np.asarray(tfidf_matrix.dot(text_profile.T)).ravel()  # shape (n,)
+
+    # Numeric similarity: 1 / (1 + scaled Euclidean)
+    diff = num_matrix - num_profile          # broadcasting (n, 5)
+    d = np.linalg.norm(diff, axis=1) / np.sqrt(num_matrix.shape[1])
+    num_sim = 1.0 / (1.0 + d)
+
+    return tw * text_sim + (1 - tw) * num_sim
 
 
 def _apply_diversity_cap(
@@ -187,92 +248,99 @@ def compute_recommendations_for_customer(
     svd_model=None,
     category_affinity: dict[int | None, float] | None = None,
     product_category_map: dict[int, int | None] | None = None,
+    cbf_model: dict | None = None,
+    cbf_all_scores: "np.ndarray | None" = None,
+    cbf_pid_to_idx: dict | None = None,
 ) -> list[tuple[int, float]]:
     """
     Score unpurchased candidate products for a customer.
 
-    Algorithm (hybrid):
-      1. SVD decomposition score: BASE + qi·pu + ALPHA*bi
-         - Unknown user: pu=zero, bu=0 (cold-start, category affinity carries the load)
-         - Unknown product: popularity fallback (1.0 + min(purchases/10, 2.0))
-      2. Category affinity boost: BETA * affinity(product.category)
-      3. Sentiment boost/penalty: GAMMA * (avg_sentiment_score - 0.5)
-         (only applied when the product has at least one review)
+    Algorithm (v3 — true CBF hybrid):
+      1. SVD score: BASE + qi·pu + ALPHA*bi
+         (cold-start: pu=zero; unknown product: popularity fallback ≤ 3.0)
+      2. CBF score: text_weight*cosine(TF-IDF) + (1-text_weight)*numeric_sim
+         Built from mean of purchased products' feature vectors (notebook Part 3).
+         Falls back to BETA * category_affinity if CBF artifacts not loaded.
+      3. Sentiment boost: GAMMA * (avg_sentiment_score - 0.5)
+      4. Final: SVD_WEIGHT * svd_score + CBF_WEIGHT * cbf_score + sentiment_boost
 
     Args:
-        customer: The Customer ORM object.
-        candidate_products: Unpurchased Product objects to score.
-        svd_model: Loaded surprise.SVD object (or None for popularity fallback).
-        category_affinity: Precomputed {category_id: affinity} dict (optional,
-            computed on-demand if not supplied).
-        product_category_map: Precomputed {product_id: category_id} dict (optional).
-            Used after scoring for diversity; not needed inside this function.
+        customer:            The Customer ORM object.
+        candidate_products:  Unpurchased Product objects to score.
+        svd_model:           Loaded surprise.SVD object (or None).
+        category_affinity:   Fallback {category_id: affinity} (used when no CBF).
+        product_category_map: {product_id: category_id} for diversity cap.
+        cbf_model:           Dict from get_cbf_model() (or None).
+        cbf_all_scores:      Pre-computed CBF similarity array over all CBF products.
+        cbf_pid_to_idx:      pid_to_idx from the CBF model.
 
     Returns:
         List of (product_db_id, score) tuples, sorted descending by score.
     """
-    # ------------------------------------------------------------------
-    # Resolve category affinity (precomputed preferred to avoid N DB hits)
-    # ------------------------------------------------------------------
-    if category_affinity is None:
-        category_affinity = _build_category_affinity(customer)
+    import numpy as np
 
     # ------------------------------------------------------------------
-    # SVD model components (if available)
+    # SVD model components
     # ------------------------------------------------------------------
     ts = None
     pu: np.ndarray | None = None
-    bu: float = 0.0
 
     if svd_model is not None:
         ts = svd_model.trainset
         try:
             inner_uid = ts.to_inner_uid(customer.external_id)
             pu = svd_model.pu[inner_uid]
-            bu = float(svd_model.bu[inner_uid])
         except ValueError:
-            # Cold-start user: pu stays None, bu stays 0
-            pu = None
-            bu = 0.0
+            pu = None  # cold-start user
+
+    # ------------------------------------------------------------------
+    # CBF available?
+    # ------------------------------------------------------------------
+    use_cbf = cbf_model is not None and cbf_all_scores is not None
+
+    # Fallback: category affinity (only needed when CBF unavailable)
+    if not use_cbf and category_affinity is None:
+        category_affinity = _build_category_affinity(customer)
 
     scores: list[tuple[int, float]] = []
 
     for prod in candidate_products:
         # ----------------------------------------------------------------
-        # 1. Base SVD score (or popularity fallback for unknown products)
+        # 1. SVD score
         # ----------------------------------------------------------------
         if svd_model is not None and ts is not None:
             try:
                 inner_iid = ts.to_inner_iid(prod.external_id)
                 bi = float(svd_model.bi[inner_iid])
-                if pu is not None:
-                    qi_pu = float(svd_model.qi[inner_iid] @ pu)
-                else:
-                    qi_pu = 0.0
-                base_score = BASE + qi_pu + ALPHA * bi
+                qi_pu = float(svd_model.qi[inner_iid] @ pu) if pu is not None else 0.0
+                svd_score = BASE + qi_pu + ALPHA * bi
             except ValueError:
-                # Unknown product — popularity fallback (capped below known SVD range)
-                base_score = 1.0 + min(float(prod.total_purchases) / 10.0, 2.0)
+                svd_score = 1.0 + min(float(prod.total_purchases) / 10.0, 2.0)
         else:
-            # No SVD model at all — pure popularity baseline (scaled to 1–5)
-            base_score = 1.0 + min(float(prod.total_purchases) / 10.0, 4.0)
+            svd_score = 1.0 + min(float(prod.total_purchases) / 10.0, 4.0)
 
         # ----------------------------------------------------------------
-        # 2. Category affinity boost
+        # 2. CBF score (real TF-IDF) or category-affinity fallback
         # ----------------------------------------------------------------
-        cat_id = prod.category_id  # FK integer, avoids select_related fetch
-        affinity = category_affinity.get(cat_id, 0.0)
-        affinity_boost = BETA * affinity
+        if use_cbf:
+            idx = cbf_pid_to_idx.get(prod.external_id)
+            cbf_score = float(cbf_all_scores[idx]) if idx is not None else 0.0
+        else:
+            cat_id = prod.category_id
+            affinity = (category_affinity or {}).get(cat_id, 0.0)
+            cbf_score = BETA * affinity
 
         # ----------------------------------------------------------------
-        # 3. Sentiment boost/penalty (skip products with no reviews)
+        # 3. Sentiment boost (only products with reviews)
         # ----------------------------------------------------------------
         sentiment_boost = 0.0
         if prod.total_purchases > 0 and prod.avg_sentiment_score > 0.0:
-            # avg_sentiment_score in [0, 1]; centre at 0.5 so neutral=no effect
             sentiment_boost = GAMMA * (prod.avg_sentiment_score - 0.5)
 
-        final_score = base_score + affinity_boost + sentiment_boost
+        # ----------------------------------------------------------------
+        # 4. Combine
+        # ----------------------------------------------------------------
+        final_score = SVD_WEIGHT * svd_score + CBF_WEIGHT * cbf_score + sentiment_boost
         scores.append((prod.pk, round(final_score, 4)))
 
     scores.sort(key=lambda x: x[1], reverse=True)
@@ -393,38 +461,61 @@ class Command(BaseCommand):
             )
 
         # ------------------------------------------------------------------
-        # 3. Pre-load all products (once, with category FK pre-fetched)
+        # 3. Load CBF model (TF-IDF from models/processed/)
+        # ------------------------------------------------------------------
+        cbf_model = get_cbf_model()
+        if cbf_model is not None:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "  [OK] CBF TF-IDF model loaded (%d products in index)." % len(cbf_model["pid_to_idx"])
+                )
+            )
+        else:
+            self.stdout.write(
+                self.style.WARNING(
+                    "  [INFO] CBF artifacts not found in models/processed/. "
+                    "Using category-affinity fallback for content signal."
+                )
+            )
+
+        # ------------------------------------------------------------------
+        # 4. Pre-load all products (once, with category FK pre-fetched)
         # ------------------------------------------------------------------
         all_products = list(Product.objects.select_related("category").all())
         self.stdout.write(f"  {len(all_products)} products in catalogue.")
 
-        # Precompute product -> category_id map (avoids attribute access in loops)
         product_category_map: dict[int, int | None] = {
             p.pk: p.category_id for p in all_products
         }
+        # Map external_id -> db pk (for CBF lookup)
+        ext_to_pk: dict[str, int] = {p.external_id: p.pk for p in all_products}
 
         # ------------------------------------------------------------------
-        # 4. Build purchase history: customer_db_id -> set of product_db_ids
-        #    Also build per-customer category purchase counts for affinity.
+        # 5. Build purchase history + category affinity (fallback only)
         # ------------------------------------------------------------------
-        self.stdout.write("  Building purchase history & category affinity ...")
+        self.stdout.write("  Building purchase history ...")
 
-        # category affinity: customer_pk -> {category_id: count}
         raw_cat_counts: dict[int, dict[int | None, int]] = defaultdict(lambda: defaultdict(int))
+        # purchase_history: cust_pk -> set of product PKs
         purchase_history: dict[int, set[int]] = defaultdict(set)
+        # purchase_ext_ids: cust_pk -> list of product external_ids (for CBF)
+        purchase_ext_ids: dict[int, list[str]] = defaultdict(list)
 
         for item in (
             OrderItem.objects
             .select_related("order", "product")
-            .values("order__customer_id", "product_id", "product__category_id")
+            .values("order__customer_id", "product_id",
+                    "product__category_id", "product__external_id")
         ):
             cid = item["order__customer_id"]
             pid = item["product_id"]
             cat_id = item["product__category_id"]
+            ext_id = item["product__external_id"]
             purchase_history[cid].add(pid)
             raw_cat_counts[cid][cat_id] += 1
+            purchase_ext_ids[cid].append(ext_id)
 
-        # Normalise category counts -> affinity in [0, 1]
+        # Fallback: category-affinity normalised
         category_affinity_map: dict[int, dict[int | None, float]] = {}
         for cid, cat_counts in raw_cat_counts.items():
             total = sum(cat_counts.values())
@@ -443,8 +534,22 @@ class Command(BaseCommand):
 
         for customer in customers:
             try:
+                import numpy as np
                 purchased = purchase_history.get(customer.pk, set())
                 candidates = [p for p in all_products if p.pk not in purchased]
+
+                # ----------------------------------------------------------
+                # Build per-customer CBF user profile (real TF-IDF cosine)
+                # ----------------------------------------------------------
+                cbf_all_scores = None
+                cbf_pid_to_idx = None
+                if cbf_model is not None:
+                    ext_ids = purchase_ext_ids.get(customer.pk, [])
+                    text_profile, num_profile = _build_cbf_user_profile(ext_ids, cbf_model)
+                    if text_profile is not None:
+                        cbf_all_scores = _cbf_scores_all(cbf_model, text_profile, num_profile)
+                        cbf_pid_to_idx = cbf_model["pid_to_idx"]
+
                 affinity = category_affinity_map.get(customer.pk, {})
 
                 # Score all candidates
@@ -454,6 +559,9 @@ class Command(BaseCommand):
                     svd_model=svd_model,
                     category_affinity=affinity,
                     product_category_map=product_category_map,
+                    cbf_model=cbf_model,
+                    cbf_all_scores=cbf_all_scores,
+                    cbf_pid_to_idx=cbf_pid_to_idx,
                 )
 
                 # Apply diversity cap to get final top-N

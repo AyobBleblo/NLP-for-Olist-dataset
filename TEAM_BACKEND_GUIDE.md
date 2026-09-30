@@ -3,7 +3,7 @@
 > **Audience:** Development Team, Frontend Engineers, Data Science / ML Collaborators  
 > **Stack:** Python 3.13, Django 6.1, Django REST Framework, scikit-surprise (SVD), Hugging Face Transformers  
 > **Status:** Production-Ready & Verified  
-> **Last Updated:** 2026-09-30 — Recommendation engine upgraded to v2 (diversity-aware hybrid)
+> **Last Updated:** 2026-09-30 — Recommendation engine upgraded to **v3** (real CBF TF-IDF from Colab Part 3 + SVD Hybrid)
 
 ---
 
@@ -25,72 +25,94 @@ Running heavy Transformer models or training Matrix Factorization algorithms dur
 
 ```mermaid
 flowchart TD
-    subgraph Offline ["Offline Machine Learning Pipeline"]
-        A[Raw Olist CSVs] -->|import_data| B[(Products & Categories)]
-        B -->|translate_products| C[NLLB-200 Translator]
-        C -->|English Titles| B
-        D[Customer Reviews] -->|run_sentiment_batch| E[DistilBERT Sentiment Model]
-        E -->|avg_sentiment_score| B
-        B -->|compute_recommendations v2| F[SVD + Affinity + Diversity]
-        F -->|Top-N Scored Pairs| G[(Recommendation Table)]
+    subgraph Colab ["Colab Notebook (Offline Training)"]
+        A[Raw Olist CSVs] -->|Part 1: Preprocessing| B[user_item.parquet]
+        A -->|Part 2: SVD CF| C[models/svd_cf.pkl]
+        A -->|Part 3: CBF TF-IDF| D[tfidf_matrix.npz + products_features.parquet]
+        A -->|Part 4: Sentiment NLP| E[reviews_sentiment.parquet]
+    end
+
+    subgraph Local ["Local Django Backend"]
+        D -->|python precompute_cbf.py| F[models/processed/cbf_precomputed.npz]
+        C --> G[compute_recommendations]
+        F --> G
+        E -->|run_sentiment_batch| H[(Product.avg_sentiment_score)]
+        H --> G
+        G -->|Top-N Scored Pairs| I[(Recommendation Table)]
     end
 
     subgraph Online ["Live Django REST API (/api/)"]
-        G -->|Sub-10ms Read| H[/api/recommendations/<customer_id>/]
-        B -->|Paginated Read| I[/api/products/ & /api/categories/]
-        J[(Cart & Orders)] -->|Stateful Write| K[/api/cart/ & /checkout/]
+        I -->|Sub-10ms Read| J[/api/recommendations/customer_id/]
+        K[(Products)] -->|Paginated Read| L[/api/products/ & /api/categories/]
+        M[(Cart & Orders)] -->|Stateful Write| N[/api/cart/ & /checkout/]
     end
 ```
 
 ---
 
-## 🧠 3. How the Recommendation Engine Works (v2 Hybrid)
+## 🧠 3. How the Recommendation Engine Works (v3 — True CBF Hybrid)
 
-Our recommendation system uses **Matrix Factorization via SVD** (scikit-surprise, saved at `models/svd_cf.pkl`) as its primary signal, augmented by **category affinity** (content-based) and **review sentiment**.
+Our recommendation system combines **three signals** in a weighted hybrid:
 
-### 3.1 Score Formula
+1. **Collaborative Filtering (CF)** — SVD matrix factorization (`models/svd_cf.pkl`)
+2. **Content-Based Filtering (CBF)** — TF-IDF + numeric similarity from **Colab Part 3** (`models/processed/cbf_precomputed.npz`)
+3. **NLP Sentiment** — DistilBERT review sentiment scores
+
+### 3.1 Score Formula (v3)
 
 For any given customer $u$ and candidate product $i$:
 
-$$\text{score} = \underbrace{BASE + q_i^T \cdot p_u + \alpha \cdot b_i}_{\text{SVD component}} + \underbrace{\beta \cdot \text{affinity}(c_i)}_{\text{content-based}} + \underbrace{\gamma \cdot (\text{sentiment}_i - 0.5)}_{\text{sentiment}}$$
+$$\text{score} = \underbrace{\lambda_{svd} \cdot (BASE + q_i^T \cdot p_u + \alpha \cdot b_i)}_{\text{SVD (CF) component}} + \underbrace{\lambda_{cbf} \cdot S_{CBF}(u, i)}_{\text{CBF component}} + \underbrace{\gamma \cdot (\text{sentiment}_i - 0.5)}_{\text{NLP sentiment}}$$
+
+Where the **CBF score** mirrors notebook Part 3's `cb_scores_for_vectors()`:
+
+$$S_{CBF}(u, i) = \underbrace{\omega \cdot \cos(\text{TF-IDF}_i,\ \bar{\text{TF-IDF}}_u)}_{\text{category text (70%)}} + \underbrace{(1-\omega) \cdot \frac{1}{1+\|\text{num}_i - \bar{\text{num}}_u\|/\sqrt{5}}}_{\text{price + dimensions (30%)}}$$
+
+User profile vectors are the **mean of purchased products' TF-IDF and numeric rows** (notebook cell 75 `ContentBasedRecommender`).
 
 | Symbol | Meaning | Default | Setting Override |
 |---|---|---|---|
+| $\lambda_{svd}$ | Weight for SVD component | **0.6** | `RECSYS_SVD_WEIGHT` |
+| $\lambda_{cbf}$ | Weight for CBF component | **0.4** | `RECSYS_CBF_WEIGHT` |
 | $BASE$ | Additive baseline | 3.0 | `RECSYS_BASE` |
-| $q_i^T \cdot p_u$ | SVD latent dot product (personalisation) | — | — |
 | $\alpha$ | Product-bias damping factor | **0.5** | `RECSYS_ALPHA` |
-| $b_i$ | Product bias (popularity in training data) | — | — |
-| $\beta$ | Category affinity weight | **1.0** | `RECSYS_BETA` |
-| $\text{affinity}(c_i)$ | Fraction of customer's purchases in category $c_i$ | [0, 1] | — |
+| $\omega$ | TF-IDF text weight in CBF | **0.7** | `CBF_TEXT_WEIGHT` |
+| $\beta$ | Category affinity weight (fallback only) | 1.0 | `RECSYS_BETA` |
 | $\gamma$ | Sentiment weight | **0.3** | `RECSYS_GAMMA` |
-| $\text{sentiment}_i$ | `avg_sentiment_score` ∈ [0, 1] | — | — |
 
-> **Why $\alpha = 0.5$?** The raw SVD formula gives full weight to $b_i$ (product bias), which caused the same "globally popular" products to rank #1 for every customer. Damping it to 50% lets the personalisation term $q_i^T \cdot p_u$ and the affinity boost meaningfully steer the ranking.
+> **CBF Fallback**: If `models/processed/cbf_precomputed.npz` is missing, the engine falls back to the v2 category-affinity approach (`BETA * affinity(category)`).
 
 ### 3.2 Scoring Rules
 
 | Situation | Behaviour |
 |---|---|
-| User known in SVD trainset | Full formula above |
-| **Cold-start** user (not in trainset) | $p_u = \mathbf{0}$, $b_u = 0$ — affinity boost carries personalisation |
-| **Unknown product** (not in trainset) | Popularity fallback: $1.0 + \min(\text{purchases}/10,\ 2.0)$ — always below the SVD range so it never outranks known products |
-| Product has no reviews (`total_purchases == 0`) | Sentiment term **skipped** (0.0 is not treated as negative) |
+| User known in SVD trainset | Full v3 formula above |
+| **Cold-start** user (not in trainset) | $p_u = \mathbf{0}$ — CBF profile from purchases still personalizes |
+| User has no purchases in CBF index | CBF score = 0 (SVD carries full weight) |
+| **Unknown product** (not in trainset) | Popularity fallback: $1.0 + \min(\text{purchases}/10,\ 2.0)$ |
+| Product has no reviews | Sentiment term **skipped** |
 
-### 3.3 Category Affinity (Content-Based Boost)
+### 3.3 Content-Based Filtering (Real TF-IDF — from Colab Part 3)
 
-Before scoring, the command precomputes each customer's **purchase distribution by category** from their `OrderItem` history:
+The CBF signal uses the artifacts generated by **Notebook Part 3** (Member 3's work):
 
-$$\text{affinity}(c) = \frac{\text{# purchases in category } c}{\text{total purchases}}$$
+- **`models/processed/tfidf_matrix.npz`**: TF-IDF matrix over product category tokens (193-word vocabulary, split on `_`, Portuguese/English stopwords removed)
+- **`models/processed/products_features.parquet`**: Feature table with `avg_price`, `product_weight_g`, `product_length_cm`, `product_height_cm`, `product_width_cm`
+- **`models/processed/tfidf_row_index.parquet`**: Row-to-`product_id` mapping
 
-This works even for cold-start users (whose seeded purchases are used directly), ensuring the top category always appears prominently in recommendations.
+These are converted to a single Django-loadable file via:
+```powershell
+python precompute_cbf.py   # uses Anaconda/system Python — must have pandas + scipy
+```
+This produces `models/processed/cbf_precomputed.npz` (1.1 MB, 32,951 products).
 
 ### 3.4 Diversity Cap
 
-After ranking, a **two-pass greedy cap** enforces at most `MAX_PER_CAT = 2` (overridable via `RECSYS_MAX_PER_CAT`) products from any single category in the final top-N list. Slots freed by the cap are filled from the next-best ranked items whose category still has room.
+After ranking, a **two-pass greedy cap** enforces at most `MAX_PER_CAT = 2` products from any single category.
 
 ### 3.5 Purchase Exclusion
 
-Before scoring, the customer's full purchase history is fetched and **all purchased product IDs are excluded** from the candidate pool. Customers never see items they already bought.
+All purchased product IDs are excluded from the candidate pool before scoring.
 
 ---
 
@@ -123,11 +145,11 @@ uv run python manage.py seed_test_scenario
 
 | # | Product | Category | Score |
 |---|---|---|---|
-| 1 | Premium Furniture Decor #83AAE8 | `furniture_decor` | 4.1696 |
-| 2 | Signature Furniture Decor #A9E189 | `furniture_decor` | 4.1654 |
-| 3 | Pro Pet Shop #A4AA7C | `pet_shop` | 3.2918 |
-| 4 | Urban Sports Leisure #94EDEF | `sports_leisure` | 3.2407 |
-| 5 | Original Housewares #CF262D | `housewares` | 3.2257 |
+| 1 | Original Furniture Decor #C50663 | `furniture_decor` | 2.2574 |
+| 2 | Smart Furniture Decor #B95D07 | `furniture_decor` | 2.2517 |
+| 3 | Pro Pet Shop #A4AA7C | `pet_shop` | 2.0466 |
+| 4 | Modern Pet Shop #10876F | `pet_shop` | 2.0185 |
+| 5 | Premium Toys #6F33A4 | `toys` | 2.0015 |
 
 - **Live Endpoint**:  
   `GET http://127.0.0.1:8000/api/recommendations/c37cc6c1a59d81460a3059744f7ada1c/?n=5`
@@ -153,11 +175,11 @@ uv run python manage.py seed_test_scenario
 
 | # | Product | Category | Score |
 |---|---|---|---|
-| 1 | Smart Sports Leisure #B9EE75 | `sports_leisure` | 4.1553 |
-| 2 | Classic Sports Leisure #FA381A | `sports_leisure` | 4.1544 |
-| 3 | Pro Pet Shop #A4AA7C | `pet_shop` | 3.2992 |
-| 4 | Urban Fashion Bags Accessories #6CC58E | `fashion_bags_accessories` | 3.2475 |
-| 5 | Signature Musical Instruments #818430 | `musical_instruments` | 3.2269 |
+| 1 | Smart Sports Leisure #B9EE75 | `sports_leisure` | 2.2544 |
+| 2 | Classic Sports Leisure #FA381A | `sports_leisure` | 2.2400 |
+| 3 | Pro Pet Shop #A4AA7C | `pet_shop` | 2.0559 |
+| 4 | Signature Musical Instruments #818430 | `musical_instruments` | 2.0113 |
+| 5 | Urban Fashion Bags Accessories #6CC58E | `fashion_bags_accessories` | 2.0065 |
 
 - **Live Endpoint**:  
   `GET http://127.0.0.1:8000/api/recommendations/3e2157f91502458bc58455fd798ed58a/?n=5`
@@ -183,11 +205,11 @@ uv run python manage.py seed_test_scenario
 
 | # | Product | Category | Score |
 |---|---|---|---|
-| 1 | Classic Computers Accessories #AAE961 | `computers_accessories` | 4.0924 |
-| 2 | Classic Computers Accessories #0021A8 | `computers_accessories` | 4.0518 |
-| 3 | Essential Furniture Decor #A237DE | `furniture_decor` | 3.3093 |
-| 4 | Pro Pet Shop #A4AA7C | `pet_shop` | 3.3088 |
-| 5 | Premium Garden Tools #8D404E | `garden_tools` | 3.2035 |
+| 1 | Classic Computers Accessories #AAE961 | `computers_accessories` | 2.1832 |
+| 2 | Classic Computers Accessories #0021A8 | `computers_accessories` | 2.1722 |
+| 3 | Pro Pet Shop #A4AA7C | `pet_shop` | 2.0549 |
+| 4 | Essential Furniture Decor #A237DE | `furniture_decor` | 2.0410 |
+| 5 | Urban Luggage Accessories #765C41 | `luggage_accessories` | 2.0405 |
 
 - **Live Endpoint**:  
   `GET http://127.0.0.1:8000/api/recommendations/feb2a9889d236875c3510880bf9576f3/?n=5`

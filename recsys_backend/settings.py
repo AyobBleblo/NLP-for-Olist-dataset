@@ -99,6 +99,15 @@ TRANSLATION_GPU_BATCH_SIZE = 16
 TRANSLATION_CPU_BATCH_SIZE = 8
 SENTIMENT_BATCH_SIZE = 32
 
+
 # Collaborative Filtering model (SVD trained via scikit-surprise)
 CF_MODEL_PATH = str(BASE_DIR / "models" / "svd_cf.pkl")
 
+# Content-Based Filtering artifacts (produced by notebook Part 3)
+CBF_PROCESSED_DIR = str(BASE_DIR / "models" / "processed")
+CBF_TFIDF_MATRIX_PATH = str(BASE_DIR / "models" / "processed" / "tfidf_matrix.npz")
+CBF_FEATURES_PATH = str(BASE_DIR / "models" / "processed" / "products_features.parquet")
+CBF_ROW_INDEX_PATH = str(BASE_DIR / "models" / "processed" / "tfidf_row_index.parquet")
+
+# CBF text vs numeric weight (must match notebook CB_TEXT_WEIGHT = 0.7)
+CBF_TEXT_WEIGHT: float = 0.7
