@@ -107,7 +107,19 @@ uv run python manage.py seed_test_scenario
 ### 👤 Customer 1: Alice Silva (Home Decor & Furniture Fan)
 - **Customer ID**: `c37cc6c1a59d81460a3059744f7ada1c` | São Paulo, SP
 - **Category Affinity**: 100% `furniture_decor`
-- **Top-5 Recommendations (v2)**:
+- **Total Paid**: **R$ 299.87** across 4 items
+
+#### 🛒 Purchase History (Items Bought & Paid):
+*Excluded from recommendation pool via Rule 3.5 (Purchase Exclusion).*
+
+| # | Purchased Product | Product ID | Category | Price |
+|---|---|---|---|---|
+| 1 | Smart Furniture Decor #A5341E | `a5341e3f8155dbb3e62323d3ea289729` | `furniture_decor` | R$ 88.94 |
+| 2 | Essential Furniture Decor #A237DE | `a237de12bdf0bfe4fe220bae65a89731` | `furniture_decor` | R$ 38.67 |
+| 3 | Pro Furniture Decor #C2ECE6 | `c2ece64199af7a53793ed9612a89a8cd` | `furniture_decor` | R$ 83.08 |
+| 4 | Classic Furniture Decor #64D0FE | `64d0feb1bcf9c7fe7b5dad3271c10910` | `furniture_decor` | R$ 89.18 |
+
+#### 🎯 Top-5 Recommendations Generated (v2):
 
 | # | Product | Category | Score |
 |---|---|---|---|
@@ -125,7 +137,19 @@ uv run python manage.py seed_test_scenario
 ### 👤 Customer 2: Bruno Santos (Sports & Outdoor Enthusiast)
 - **Customer ID**: `3e2157f91502458bc58455fd798ed58a` | Rio de Janeiro, RJ
 - **Category Affinity**: 100% `sports_leisure`
-- **Top-5 Recommendations (v2)**:
+- **Total Paid**: **R$ 434.93** across 4 items
+
+#### 🛒 Purchase History (Items Bought & Paid):
+*Excluded from recommendation pool via Rule 3.5 (Purchase Exclusion).*
+
+| # | Purchased Product | Product ID | Category | Price |
+|---|---|---|---|---|
+| 1 | Urban Sports Leisure #583F15 | `583f158587cdecda3e8bdea694021e39` | `sports_leisure` | R$ 45.33 |
+| 2 | Signature Sports Leisure #81288D | `81288df52439985f610be64465e53f57` | `sports_leisure` | R$ 110.54 |
+| 3 | Deluxe Sports Leisure #219666 | `2196663031bcde078cede855ac0b5739` | `sports_leisure` | R$ 65.17 |
+| 4 | Smart Sports Leisure #4B5E26 | `4b5e26931a0b0d3a690a3f520329a975` | `sports_leisure` | R$ 213.89 |
+
+#### 🎯 Top-5 Recommendations Generated (v2):
 
 | # | Product | Category | Score |
 |---|---|---|---|
@@ -143,7 +167,19 @@ uv run python manage.py seed_test_scenario
 ### 👤 Customer 3: Carlos Costa (Computers & Technology Geek)
 - **Customer ID**: `feb2a9889d236875c3510880bf9576f3` | Curitiba, PR
 - **Category Affinity**: 100% `computers_accessories`
-- **Top-5 Recommendations (v2)**:
+- **Total Paid**: **R$ 516.43** across 4 items
+
+#### 🛒 Purchase History (Items Bought & Paid):
+*Excluded from recommendation pool via Rule 3.5 (Purchase Exclusion).*
+
+| # | Purchased Product | Product ID | Category | Price |
+|---|---|---|---|---|
+| 1 | Premium Computers Accessories #FB6782 | `fb6782985a98aa8a59238f58239f6f1e` | `computers_accessories` | R$ 79.99 |
+| 2 | Signature Computers Accessories #C7E027 | `c7e02747ef9366a4fb7f4ac4fd261c36` | `computers_accessories` | R$ 112.82 |
+| 3 | Essential Computers Accessories #7AA1AB | `7aa1ab866537ff58ef91e90e3df92134` | `computers_accessories` | R$ 235.12 |
+| 4 | Essential Computers Accessories #0CF3AB | `0cf3ab3383c2ae6f5750e5847c749e22` | `computers_accessories` | R$ 88.50 |
+
+#### 🎯 Top-5 Recommendations Generated (v2):
 
 | # | Product | Category | Score |
 |---|---|---|---|
