@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Discover handpicked Brazilian products powered by verified buyer review sentiment and AI-tailored recommendations.">
+  <title>Olist Store · Curated Brazilian Marketplace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <div class="container hero__grid">
+        <div>
+          <p class="eyebrow">Curated Brazilian Marketplace · Smart Recommendations</p>
+          <h1>
+            <span>Curated products with</span>
+            <span class="gradient-text">verified sentiment</span>
+          </h1>
+          <p class="lead">
+            Discover premium Brazilian goods with real-time AI personalization. Powered by authentic
+            shopper taste profiles, verified sentiment from over 1,180+ real reviews, and fast nationwide fulfillment.
+          </p>
+          <div class="hero__actions">
+            <a class="btn btn--primary btn--lg" href="catalog.html" id="hero-cta">Explore Catalogue</a>
+            <a class="btn btn--outline btn--lg" href="recommendations.html">Personalized For You</a>
+          </div>
+          <div class="hero__meta" id="hero-stats">
+            <div><strong>—</strong><span>Products</span></div>
+            <div><strong>—</strong><span>Categories</span></div>
+            <div><strong>—</strong><span>Reviews</span></div>
+            <div><strong>—</strong><span>Personas</span></div>
+          </div>
+        </div>
+
+        <aside class="hero__panel" aria-labelledby="hero-panel-title">
+          <h2 id="hero-panel-title">Your Personalized Shelf</h2>
+          <div id="hero-persona" class="stack stack--sm"></div>
+          <div id="hero-recs" class="stack stack--sm" style="margin-top:18px"></div>
+        </aside>
+      </div>
+    </section>
+
+    <div class="container">
+      <!-- Trust & Value Props -->
+      <section class="trust-grid" id="trust-props" aria-label="Store Guarantees"></section>
+
+      <!-- Shop by Department / Featured Categories -->
+      <section class="section" id="featured-categories-section">
+        <div class="section-head">
+          <div>
+            <h2>Shop by Department</h2>
+            <p>Explore 30 curated categories across tech, home, lifestyle, and wellness.</p>
+          </div>
+          <a class="btn btn--ghost btn--sm" href="catalog.html">View all 30 departments</a>
+        </div>
+        <div class="grid grid--3" id="category-grid"></div>
+      </section>
+
+      <!-- Trending & Best Sellers -->
+      <section class="section" id="home-products-section">
+        <div class="section-head">
+          <div>
+            <h2>Trending &amp; Best Sellers</h2>
+            <p>Our top products loved by customers across Brazil, ranked by sales and positive sentiment.</p>
+          </div>
+          <a class="btn btn--ghost btn--sm" href="catalog.html?ordering=-total_purchases,id">View full catalogue</a>
+        </div>
+        <div class="grid grid--products" id="home-products"></div>
+      </section>
+
+      <!-- Shop by Shopper Profile -->
+      <section class="section" id="personas-section">
+        <div class="section-head">
+          <div>
+            <h2>Browse as a Curated Shopper</h2>
+            <p>Select any shopper profile to experience how our recommendation engine instantly personalizes your entire feed.</p>
+          </div>
+        </div>
+        <div class="grid grid--3" id="persona-cards"></div>
+      </section>
+
+      <!-- Verified Buyer Testimonials -->
+      <section class="section" id="reviews-section">
+        <div class="section-head">
+          <div>
+            <h2>What Verified Buyers Are Saying</h2>
+            <p>Authentic reviews analyzed and scored with our NLP sentiment intelligence model.</p>
+          </div>
+        </div>
+        <div class="grid grid--3" id="home-reviews"></div>
+      </section>
+
+      <!-- VIP Club / Newsletter Callout -->
+      <section class="section">
+        <div class="card card--pad" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(236, 72, 153, 0.08)); border-color: var(--border-strong); text-align: center; padding: 48px 24px;">
+          <h2 style="font-size: 1.5rem; margin-bottom: 8px;">Join the Olist VIP Club</h2>
+          <p class="text-soft" style="max-width: 520px; margin: 0 auto 24px;">
+            Receive tailored recommendations, early access to new arrivals, and special promotions tailored to your taste.
+          </p>
+          <div style="display: flex; justify-content: center; gap: 10px; max-width: 440px; margin: 0 auto; flex-wrap: wrap;">
+            <input type="email" class="input" placeholder="Enter your email address…" style="flex: 1; min-width: 220px;" aria-label="Email address">
+            <button class="btn btn--primary" type="button" onclick="alert('Thank you for subscribing to Olist VIP!')">Subscribe</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="js/pages/home.js?v=2"></script>
+</body>
+</html>

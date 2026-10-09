@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive NLP sentiment lab — run the documented pipeline on review text and inspect the 3-class probability split.">
+  <title>NLP Lab · Olist Recommender</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main>
+    <div class="container">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">NLP pipeline</p>
+          <h1>Sentiment lab</h1>
+          <p class="lead">
+            Paste a review (Portuguese or English) and run the repository's documented pipeline:
+            mojibake repair → NLLB-200 translation → DistilBERT classification over the three
+            classes used by <code>prepare_data.py</code>.
+          </p>
+        </div>
+        <div class="page-head__actions">
+          <span class="pill pill--ghost" id="nlp-mode"></span>
+        </div>
+      </header>
+
+      <section class="section--tight">
+        <div id="nlp-limitation"></div>
+      </section>
+
+      <section class="split split--detail section">
+        <div class="card card--pad">
+          <div class="stack">
+            <div class="field">
+              <label for="review-input">Review text</label>
+              <textarea class="textarea" id="review-input" rows="7"
+                placeholder="Produto excelente, chegou antes do prazo. Recomendo!"></textarea>
+              <span class="field__hint" id="lang-hint"></span>
+            </div>
+            <div class="row row--wrap">
+              <button class="btn btn--primary" type="button" id="run-btn">Run pipeline</button>
+              <button class="btn btn--ghost" type="button" id="clear-btn">Clear</button>
+              <span class="spacer"></span>
+              <span class="text-xs text-dim" id="char-count">0 characters</span>
+            </div>
+            <div class="stack stack--sm" id="sample-reviews"></div>
+          </div>
+        </div>
+
+        <div class="card card--pad">
+          <div id="nlp-result" class="prediction">
+            <div class="state state--empty">
+              <span class="state__icon">◐</span>
+              <h3 class="state__title">Awaiting input</h3>
+              <p class="state__body">Run the pipeline to see the translation and the binary probability distribution.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div><h2>20-case binary benchmark</h2><p>The repo's own easy→hard suite (<code>inference.py</code>): 10 Negative and 10 Positive cases testing obvious defects, contrast, litotes, and sarcasm.</p></div>
+          <button class="btn btn--ghost btn--sm" type="button" id="run-benchmark">Run all 20</button>
+        </div>
+        <div class="grid grid--2" id="benchmark-grid"></div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div><h2>Pipeline stages</h2><p>Each stage corresponds to a real script or management command in the repository.</p></div>
+        </div>
+        <div class="pipeline" id="nlp-pipeline"></div>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="js/pages/nlp-lab.js"></script>
+</body>
+</html>

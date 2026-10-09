@@ -1,0 +1,158 @@
+=====================================================================
+ PLAN: Rebuild the Store on the REAL Olist Catalog so CF + CBF + NLP
+       actually run (no more category-affinity fallback)
+=====================================================================
+Date   : 2026-10-04
+Status : PLANNED (not implemented yet)
+
+---------------------------------------------------------------------
+0. WHY THIS PLAN (the problem we are solving)
+---------------------------------------------------------------------
+The current demo store (10 categories / 30 products / 5 users) uses
+NEW invented IDs (prod_macbook_air_m2_001, usr_alice_tech_01, ...).
+
+The trained models only know the ORIGINAL Olist IDs (32-char hex):
+  - CF  (models/svd_cf.pkl)                 -> knows only Olist user/product IDs
+  - CBF (models/processed/cbf_precomputed.npz) -> indexes only Olist product IDs
+  - NLP (models/best_model_binary)          -> needs review text (we had 0 reviews)
+
+Result: every new ID is "cold-start", so the system fell back to the
+category-affinity heuristic (Base 3.2 + Affinity x 2.2 + ...).
+
+ANSWER: YES - using the original Olist products (with their ORIGINAL
+hex IDs) solves CBF fully and CF for products. CF for users is solved
+only if the demo users are real Olist customers that exist in the SVD
+trainset (see section 4).
+
+---------------------------------------------------------------------
+1. THE GOLDEN RULE
+---------------------------------------------------------------------
+  Product.external_id  MUST stay the original Olist product_id (hex).
+  Customer.external_id MUST stay the original Olist customer ID that
+                       the SVD model was trained on.
+
+  We may change the DISPLAY (English name, image, description),
+  but we must NEVER change the ID. The ID is the bridge to the models.
+
+---------------------------------------------------------------------
+2. CATEGORY SELECTION (~30 good categories)
+---------------------------------------------------------------------
+Note: Olist has ~71-73 categories (not 100). We select ~30 of them.
+
+Selection criteria (no random picks):
+  a) Category has many products present in BOTH the SVD trainset
+     AND the CBF index.
+  b) Category has many reviews (so NLP sentiment is meaningful).
+  c) Category has a clear English translation
+     (product_category_name_translation.csv).
+  d) Category is visually clear so real images make sense
+     (e.g. computers_accessories, telephony, watches_gifts,
+      sports_leisure, furniture_decor, bed_bath_table, health_beauty,
+      housewares, toys, auto, cool_stuff, garden_tools, baby,
+      perfumery, electronics, consoles_games, musical_instruments,
+      office_furniture, luggage_accessories, pet_shop, books, ...).
+  e) Exclude vague / tiny categories (e.g. "others", categories with
+     < ~50 trained products, duplicated/merged categories).
+
+     i wanna real images for eatch product
+
+---------------------------------------------------------------------
+3. PRODUCT SELECTION (exactly 100 shown products)
+---------------------------------------------------------------------
+For each selected category pick ~3-4 products (total = 100) that:
+  a) Exist in svd_cf.pkl trainset   (to_inner_iid works -> real CF)
+  b) Exist in cbf_precomputed.npz   (pid_to_idx has it  -> real CBF)
+  c) Have the MOST reviews / orders  (-> real NLP sentiment + popularity)
+  d) Have non-empty product attributes (weight, dimensions, photos_qty)
+
+Display layer (does NOT touch the ID):
+  - name_translated : clear English display name
+                      (Olist has no real product names - only
+                       category + attributes - so we build a clean
+                       English title from category + specs).
+  - image_url       : one REAL, verified photo per product that
+                      matches its category (HTTP 200 checked).
+                      No random / placeholder images.
+  - description     : short English text (category + specs).
+
+Hidden products: the rest of the Olist catalog stays OUT of the web
+shop (or is flagged is_visible=False) - only the 100 are shown.
+Recommendations are also restricted to these 100 products.
+
+---------------------------------------------------------------------
+4. USERS (CF needs real trained users)
+---------------------------------------------------------------------
+  - Pick 5 demo users from REAL Olist customers that:
+      * exist in the SVD trainset (to_inner_uid works -> real pu vector)
+      * have 2+ purchases inside the selected 100 products/categories
+        (most Olist customers bought only once - filter carefully)
+  - Give them friendly display names/personas (Alice, Bruno, ...)
+    but KEEP their original customer ID as external_id.
+  - Verify first which ID the SVD was trained on
+    (customer_id vs customer_unique_id) and use the same one.
+  - Import their real order history -> shown in "Purchase History".
+
+  Note: purchases made LIVE in the web app are new interactions the
+  SVD has not seen. They still influence CBF immediately (user
+  profile = mean TF-IDF of purchased products). For CF to learn from
+  them, SVD must be retrained periodically (offline batch).
+
+---------------------------------------------------------------------
+5. NLP (DistilBERT sentiment)
+---------------------------------------------------------------------
+  - Import the REAL reviews for the 100 products
+    (olist_order_reviews_translated_llm.csv).
+  - Run: run_sentiment_batch  -> fills Product.avg_sentiment_score
+  - Optional: new reviews written in the app are scored live/offline
+    by best_model_binary.
+
+---------------------------------------------------------------------
+6. HOW THE FINAL SCORE WILL WORK (true hybrid)
+---------------------------------------------------------------------
+  svd_score  = BASE + qi . pu + ALPHA * bi          (real CF)
+  cbf_score  = 0.7 * cosine(TF-IDF) + 0.3 * numeric_sim  (real CBF)
+  sentiment  = GAMMA * (avg_sentiment_score - 0.5)  (real NLP)
+
+  final = 0.6 * svd_score + 0.4 * cbf_score + sentiment
+  + diversity cap: max 2 products per category
+  + exclude already purchased products
+
+  The category-affinity fallback should then trigger for ~0 products.
+
+---------------------------------------------------------------------
+7. IMPLEMENTATION STEPS (order)
+---------------------------------------------------------------------
+  Step 1  Analysis script (read-only): list categories with counts of
+          products in SVD trainset AND CBF index AND reviews.
+  Step 2  Choose ~30 categories + 100 products (save list to
+          data/selected_100_products.csv for reproducibility).
+  Step 3  Choose 5 real trained customers (save to
+          data/selected_5_customers.csv).
+  Step 4  Prepare English names + verified real image URLs for the 100.
+  Step 5  New management command: seed_olist_catalog
+          (flush store tables -> import 30 categories, 100 products,
+           5 customers, their real orders, real reviews).
+  Step 6  run_sentiment_batch (NLP)
+  Step 7  compute_recommendations (CF + CBF + NLP) - restricted to
+          the 100 visible products.
+  Step 8  Make checkout refresh use the same hybrid function
+          (replace the heuristic in store/views.py
+           _refresh_customer_recommendations).
+  Step 9  Verification:
+            - count of products hitting SVD (not fallback) = 100
+            - count of products hitting CBF index          = 100
+            - 5 users have real pu vectors                 = 5
+            - frontend shows English names + real images
+  Step 10 Update PROJECT_CONTEXT.md / README.md with final numbers.
+
+---------------------------------------------------------------------
+8. RISKS / LIMITATIONS (be honest in the capstone report)
+---------------------------------------------------------------------
+  - Olist products have NO real brand names or photos. English names
+    and images are representative of the category/specs, not the
+    exact original item.
+  - Olist customers are very sparse (most have 1 order). Finding 5
+    users with rich history inside 100 products may need relaxing
+    filters (e.g. 2+ orders across selected categories).
+  - Live purchases update CBF instantly, but CF only after retraining.
+=====================================================================

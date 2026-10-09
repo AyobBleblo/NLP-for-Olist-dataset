@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Personalized product recommendations tailored to your shopper profile and tastes on Olist Store.">
+  <title>Recommendations · Olist Store</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main>
+    <div class="container">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Curated For You</p>
+          <h1>Your personalized recommendations</h1>
+          <p class="lead">
+            Handpicked product suggestions tailored using collaborative taste profiles, verified review sentiment, and product similarity.
+          </p>
+        </div>
+        <div class="page-head__actions">
+          <label class="field" style="gap:4px">
+            <span class="text-xs text-dim">Items to show</span>
+            <select class="select" id="n-select" style="width:110px">
+              <option value="5">Top 5</option>
+              <option value="10" selected>Top 10</option>
+              <option value="20">Top 20</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <section id="persona-summary"></section>
+      <section class="section" id="purchase-history-section"></section>
+      <section class="section" id="rec-section" aria-live="polite"></section>
+      <section class="section" id="score-explainer"></section>
+    </div>
+  </main>
+
+  <script type="module" src="js/pages/recommendations.js?v=2"></script>
+</body>
+</html>

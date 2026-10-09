@@ -17,6 +17,7 @@ dependencies = [
     "djangorestframework>=3.18.1",
     "django-filter>=26.1",
     "scikit-surprise>=1.1.5",
+    "django-cors-headers>=4.9.0",
 ]
 
 [[tool.uv.index]]

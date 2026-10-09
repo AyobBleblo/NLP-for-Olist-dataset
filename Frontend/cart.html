@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="View and manage items in your shopping cart on Olist Store.">
+  <title>Shopping Cart · Olist Store</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main>
+    <div class="container">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Shopping Bag</p>
+          <h1>Your cart</h1>
+          <p class="lead">
+            Review your selected items, adjust quantities, and proceed to secure checkout.
+          </p>
+        </div>
+        <div class="page-head__actions">
+          <span class="pill pill--ghost" id="cart-customer"></span>
+        </div>
+      </header>
+
+      <section class="cart-layout" aria-live="polite">
+        <div id="cart-items"></div>
+        <aside id="cart-summary"></aside>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="js/pages/cart.js?v=2"></script>
+</body>
+</html>

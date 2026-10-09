@@ -1,273 +1,481 @@
-# Olist E-Commerce Recommendation System — NLP Sentiment Classification Pipeline
+﻿# 🛒 Olist Smart Recommendation System
 
-Comprehensive documentation of the end-to-end NLP workflow built for the **Olist Brazilian E-Commerce Capstone Project**. This document covers every phase from raw data ingestion and Portuguese-to-English translation to model training, evaluation, and inference.
-
----
-
-## Table of Contents
-1. [Project Overview & Objectives](#1-project-overview--objectives)
-2. [Dataset Overview & Ingestion](#2-dataset-overview--ingestion)
-3. [Phase 1: Machine Translation Pipeline (PT $\rightarrow$ EN)](#3-phase-1-machine-translation-pipeline-pt--en)
-4. [Phase 2: Sentiment Formulation & Class Imbalance Strategy](#4-phase-2-sentiment-formulation--class-imbalance-strategy)
-5. [Phase 3: Stratified Dataset Splitting](#5-phase-3-stratified-dataset-splitting)
-6. [Phase 4: DistilBERT Architecture & Training Pipeline](#6-phase-4-distilbert-architecture--training-pipeline)
-7. [Phase 5: Training Results & Validation Progression](#7-phase-5-training-results--validation-progression)
-8. [Phase 6: Held-Out Test Set Evaluation](#8-phase-6-held-out-test-set-evaluation)
-9. [Phase 7: Inference & 30-Case Benchmark Suite](#9-phase-7-inference--30-case-benchmark-suite)
-10. [Repository Structure & File Inventory](#10-repository-structure--file-inventory)
-11. [How to Run Every Step](#11-how-to-run-every-step)
-12. [Downstream Integration with Recommendation Engine](#12-downstream-integration-with-recommendation-engine)
+> **Samsung Innovation Campus — Capstone Project**
+> An end-to-end AI-powered e-commerce platform built on the Brazilian [Olist](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) dataset.
+> Combines Collaborative Filtering (SVD), Content-Based Filtering (TF-IDF), and NLP Sentiment Analysis (fine-tuned DistilBERT) into a **hybrid recommendation engine** served at **sub-10ms** API response times.
 
 ---
 
-## 1. Project Overview & Objectives
+## 📋 Table of Contents
 
-In modern e-commerce recommendation systems, star ratings alone provide coarse-grained signals. Two products may both hold a 3.8-star average, but one may have reviews complaining about catastrophic hardware failure while the other suffers only from minor delivery packaging delays.
-
-**Core Objective:**
-Fine-tune a state-of-the-art Transformer NLP model (**DistilBERT**) on customer reviews to extract granular sentiment polarity ($P(\text{Negative}), P(\text{Neutral}), P(\text{Positive})$). This sentiment score serves as an objective product-quality index and dynamic weight for downstream collaborative filtering and hybrid recommendation algorithms.
-
----
-
-## 2. Dataset Overview & Ingestion
-
-* **Dataset**: Brazilian E-Commerce Public Dataset by Olist (Kaggle).
-* **Ingestion Script**: [`downloddataset.py`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/downloddataset.py) using `kagglehub`.
-* **Primary Target File**: `olist_order_reviews_dataset.csv`
-  * **Total records**: 99,224 rows
-  * **Columns**: `review_id`, `order_id`, `review_score`, `review_comment_title`, `review_comment_message`, `review_creation_date`, `review_answer_timestamp`
-  * **Reviews with text**: 40,949 rows (58,275 records were rating-only without written text and were filtered out for NLP modeling).
+1. [Project Overview](#-project-overview)
+2. [Architecture at a Glance](#-architecture-at-a-glance)
+3. [What Is Included in the Repo](#-what-is-included-in-the-repo)
+4. [Prerequisites](#-prerequisites)
+5. [Quick Start](#-quick-start-5-steps)
+6. [Detailed Setup](#-detailed-setup)
+7. [Running the Frontend](#-running-the-frontend)
+8. [Management Commands](#-management-commands-reference)
+9. [API Reference](#-api-endpoints-reference)
+10. [Test Customer IDs](#-test-customer-ids)
+11. [Project Structure](#-project-structure)
+12. [Optional: DistilBERT Model](#-optional-distilbert-sentiment-model-setup)
+13. [Troubleshooting](#-troubleshooting)
 
 ---
 
-## 3. Phase 1: Machine Translation Pipeline (PT $\rightarrow$ EN)
+## 🎯 Project Overview
 
-Customer reviews were originally written in Brazilian Portuguese. To leverage pre-trained transformer backbones trained on English corpora without losing Brazilian Portuguese nuances, we built a GPU-accelerated batch translation pipeline.
+This project solves a real e-commerce problem: **how do you deliver personalized recommendations at web speed when the models are expensive to run?**
 
-### Model Selection
-We evaluated candidate translation models on Hugging Face:
-* `Helsinki-NLP/opus-mt-tc-big-pt-en`: Lightweight, but rigid with informal e-commerce slang.
-* `facebook/m2m100_418M`: Adequate, but older architecture.
-* **`facebook/nllb-200-distilled-600M` (Selected)**: State-of-the-art multilingual model with dedicated support for Portuguese (`por_Latn` $\rightarrow$ `eng_Latn`), handling spelling errors, internet slang, and short e-commerce reviews with high semantic fidelity.
+The answer is **Decoupled Asynchronous Intelligence**:
 
-### Text Cleaning & Translation Script: [`translate_reviews.py`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/translate_reviews.py)
-* **Encoding Artifact Repair**: Used `ftfy` to resolve mojibake and encoding corruptions (e.g., `Parabns` $\rightarrow$ `Parabéns`).
-* **Batch Processing**: Dynamic mini-batches executed with PyTorch FP16 on NVIDIA GeForce GTX 1650 Ti GPU.
-* **Output File**: [`data/olist_order_reviews_translated.csv`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/data/olist_order_reviews_translated.csv) (16.8 MB, 99,224 rows, with added column `review_comment_translated`).
-* **Quality Verification**: [`check_translation_quality.py`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/check_translation_quality.py) verified 30-sample side-by-side outputs across 1–5 stars.
+- 🧠 **Offline (batch):** DistilBERT scores reviews, SVD trains on purchase history, CBF builds TF-IDF product vectors — all precomputed and stored in the database.
+- ⚡ **Online (live request):** Django reads from pre-indexed database rows. Zero ML inference in the request path. Response time: **< 10 ms**.
+- 🔄 **On checkout:** A lightweight event recomputes only that customer's recommendations using cached vectors — no GPU needed.
 
----
+### Key NLP Results
 
-## 4. Phase 2: Sentiment Formulation & Class Imbalance Strategy
-
-### 3-Class Sentiment Mapping
-The original 1–5 star `review_score` was mapped into 3 standard sentiment classes:
-
-| Class ID | Sentiment | Source Scores | Clean Count | Dataset % | Description |
-|---|---|---|---|---|---|
-| **0** | **Negative** | ⭐ 1, ⭐ 2 | 10,888 | 26.59% | Strong complaints, defects, refunds |
-| **1** | **Neutral** | ⭐ 3 | 3,556 | 8.68% | Average, mixed pros/cons, neutral receipt |
-| **2** | **Positive** | ⭐ 4, ⭐ 5 | 26,505 | 64.73% | High satisfaction, praise, recommendations |
-| **Total** | — | — | **40,949** | **100.0%** | (Rows with text) |
-
-### Class Imbalance Resolution: Weighted Cross-Entropy Loss
-Because **Positive** represents nearly **65%** of the data and **Neutral** only **8.7%**, standard models develop a severe bias toward predicting Positive.
-
-> **Key Design Decision:** Cross-validation does *not* solve class bias. We resolved the imbalance mathematically using **inverse frequency class weighting** in the loss function:
-
-$$W_k = \frac{N}{K \cdot N_k}$$
-
-Where $N = 32,759$ (training samples), $K = 3$ (number of classes), and $N_k$ is the frequency of class $k$:
-* **Negative (Class 0)**: $32759 / (3 \times 8710) = \mathbf{1.2537}$
-* **Neutral (Class 1)**: $32759 / (3 \times 2845) = \mathbf{3.8382}$
-* **Positive (Class 2)**: $32759 / (3 \times 21204) = \mathbf{0.5150}$
-
-**Effect:** Misclassifying a **Neutral** review is penalized **7.5× more heavily** than misclassifying a Positive review, forcing the transformer to actively distinguish subtle minority-class boundaries.
+| Model | Test Accuracy | Notes |
+|---|---|---|
+| TF-IDF + Logistic Regression (baseline) | 93.0 % | Binary sentiment, 37 K reviews |
+| Fine-tuned DistilBERT (NLLB-200 translation) | 93.34 % | 249 errors / 3 740 |
+| Fine-tuned DistilBERT (Qwen2.5-7B translation) | **94.0 %** | 209 errors / 3 727 — **−23 % fewer missed negatives** |
 
 ---
 
-## 5. Phase 3: Stratified Dataset Splitting
-
-Executed via [`prepare_data.py`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/prepare_data.py):
-* Filtered out empty/null comments.
-* Applied an **80 / 10 / 10 stratified split** ensuring exact class preservation across all splits:
-
-| Split | File Path | Total Rows | Negative (0) | Neutral (1) | Positive (2) |
-|---|---|---|---|---|---|
-| **Train (80%)** | [`data/train.csv`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/data/train.csv) | **32,759** | 8,710 (26.59%) | 2,845 (8.68%) | 21,204 (64.73%) |
-| **Val (10%)** | [`data/val.csv`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/data/val.csv) | **4,095** | 1,089 (26.59%) | 355 (8.67%) | 2,651 (64.74%) |
-| **Test (10%)** | [`data/test.csv`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/data/test.csv) | **4,095** | 1,089 (26.59%) | 356 (8.69%) | 2,650 (64.71%) |
-
----
-
-## 6. Phase 4: DistilBERT Architecture & Training Pipeline
-
-Implemented in [`train_model.py`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/train_model.py):
-
-### Architecture & Optimization
-* **Backbone**: `distilbert-base-uncased` (66M parameters, 6 transformer layers, 12 attention heads).
-* **Head**: Sequence classification head (Dropout + Linear layer $768 \rightarrow 3$).
-* **Hardware**: NVIDIA GeForce GTX 1650 Ti GPU (4GB VRAM).
-* **Speed & Memory Optimizations**:
-  * **FP16 Automatic Mixed Precision (AMP)** via `torch.amp.autocast('cuda')` and `GradScaler`.
-  * **Dynamic Batch Padding**: `DataCollatorWithPadding` dynamically pads batches to the length of the longest sentence in that mini-batch rather than a fixed 256 tokens, reducing unnecessary computation by ~70%.
-  * **GPU VRAM Utilization**: ~1.65 GB (safely below 4GB limit).
-  * **GPU Compute Utilization**: ~98–99%.
-
-### Training Configuration
-* **Batch Size**: 16
-* **Max Token Length**: 256
-* **Optimizer**: AdamW ($lr = 2 \times 10^{-5}$, weight decay $= 0.01$, $\beta_1 = 0.9, \beta_2 = 0.999$)
-* **LR Scheduler**: Linear warmup over the first 10% of steps (819 steps), decaying linearly to 0 across 8,192 total steps.
-* **Epochs**: 4 (2,048 steps per epoch).
-* **Early Stopping / Checkpoint Selection**: Checkpoint saved when Validation Macro F1 improves.
-
----
-
-## 7. Phase 5: Training Results & Validation Progression
-
-Total training duration: **76.84 minutes** (~18.4 minutes per epoch).
-
-| Epoch | Train Loss | Val Loss | Val Accuracy | Val Macro F1 | Negative F1 | Neutral F1 | Positive F1 | Status |
-|---|---|---|---|---|---|---|---|---|
-| **1** | 0.7444 | **0.6650** | 80.95% | 0.6786 | 0.8004 | 0.3316 | 0.9039 | Checkpoint saved |
-| **2** | 0.6218 | 0.7067 | 81.37% | 0.6757 | 0.8068 | 0.3176 | 0.9028 | — |
-| **3** | 0.5390 | 0.7614 | **82.34%** | **0.6854** | **0.8120** | **0.3341** | **0.9101** | **Best Model Checkpoint** |
-| **4** | **0.4584** | 0.8576 | 82.08% | 0.6813 | 0.8023 | 0.3306 | 0.9109 | (Early stop trigger) |
-
-The final best model checkpoint was saved to [`models/best_model/`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/models/best_model) with full epoch logs stored in [`models/training_log.json`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/models/training_log.json).
-
----
-
-## 8. Phase 6: Held-Out Test Set Evaluation
-
-Executed via [`evaluate_model.py`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/evaluate_model.py) on **4,095 unseen test samples**:
-
-### Classification Report
-
-```text
-              precision    recall  f1-score   support
-
-    Negative     0.8014    0.8411    0.8208      1089
-     Neutral     0.2731    0.3736    0.3155       356
-    Positive     0.9456    0.8796    0.9114      2650
-
-    accuracy                         0.8254      4095
-   macro avg     0.6734    0.6981    0.6826      4095
-weighted avg     0.8488    0.8254    0.8355      4095
-```
-
-### Confusion Matrix
-
-| True \\ Predicted | Negative (0) | Neutral (1) | Positive (2) | Total | Class Recall |
-|---|---|---|---|---|---|
-| **True Negative** | **916** | 133 | 40 | 1,089 | **84.11%** |
-| **True Neutral** | 129 | **133** | 94 | 356 | **37.36%** |
-| **True Positive** | 98 | 221 | **2,331** | 2,650 | **87.96%** |
-| **Total Predicted** | 1,143 | 487 | 2,465 | 4,095 | — |
-| **Class Precision** | **80.14%** | **27.31%** | **94.56%** | — | — |
-
-### Key Diagnostic Insights
-1. **Polarity Separation is Outstanding (>96%)**:
-   Between direct opposites (Positive vs. Negative):
-   * Only **40 out of 1,089** Negative reviews (3.67%) were misclassified as Positive.
-   * Only **98 out of 2,650** Positive reviews (3.70%) were misclassified as Negative.
-2. **The Neutral Class Dynamics**:
-   Neutral (3-star) reviews inherently contain mixed sentiment: e.g. *"Great product, but delivery was 2 weeks late"*. Such sentences carry strong positive and negative tokens simultaneously. Because Neutral makes up only 8.7% of the dataset, achieving **37.4% recall** proves the weighted loss prevented the model from simply ignoring this class.
-3. **Core Classes (91.3% of users)**:
-   For Positive and Negative reviews, the model achieves **0.9114** and **0.8208** F1 scores, providing an exceptionally stable foundation for customer satisfaction scoring.
-
----
-
-## 9. Phase 7: Inference & 30-Case Benchmark Suite
-
-Implemented in [`inference.py`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/inference.py) and [`inference_nlp.py`](file:///d:/01_Projects_Workspace/Recoomedation%20System%20Copstoe Project/inference_nlp.py):
-
-### 30-Case Benchmark (Easy $\rightarrow$ Hard)
-The benchmark evaluates 30 crafted e-commerce scenarios across all three classes:
-* **Negative (Levels 1–10)**: From obvious failure (*"Broken on arrival, waste of money"*) $\rightarrow$ Service delays $\rightarrow$ Sarcasm (*"Works fine if you only need it to turn on once"*).
-* **Neutral (Levels 1–10)**: From explicit averages (*"Standard cable, works properly"*) $\rightarrow$ Mixed reviews (*"Good material, but delivery was twice as long"*) $\rightarrow$ Deferred judgment.
-* **Positive (Levels 1–10)**: From pure enthusiasm (*"Wonderful, 100% recommend"*) $\rightarrow$ Solid cost-benefit $\rightarrow$ Understated praise (*"Not bad at all, actually performs much better"*).
-
----
-
-## 10. Repository Structure & File Inventory
+## 🏗️ Architecture at a Glance
 
 ```
-Recoomedation System Copstoe Project/
-├── data/
-│   ├── olist_order_reviews_dataset.csv     # Original Olist reviews (Portuguese)
-│   ├── olist_order_reviews_translated.csv  # Translated reviews (NLLB-200, 16.8 MB)
-│   ├── train.csv                           # 80% Stratified Train set (32,759 rows)
-│   ├── val.csv                             # 10% Stratified Val set (4,095 rows)
-│   └── test.csv                            # 10% Stratified Test set (4,095 rows)
-├── models/
-│   ├── best_model/                         # Saved fine-tuned DistilBERT weights
-│   │   ├── config.json                     # Model hyperparameters & label mapping
-│   │   ├── model.safetensors               # Trained PyTorch transformer weights (268 MB)
-│   │   ├── tokenizer.json                  # WordPiece tokenizer configuration
-│   │   └── tokenizer_config.json
-│   ├── training_log.json                   # Loss, accuracy, F1 per epoch history
-│   └── evaluation_results.json             # Test set classification report & confusion matrix
-├── docs/
-│   └── pre_training_discussion.md          # Architectural decisions & class distribution notes
-├── downloddataset.py                       # Automated Kagglehub dataset downloader
-├── translate_reviews.py                    # NLLB-200 GPU batch translation script
-├── check_translation_quality.py            # Quality inspection script for translations
-├── prepare_data.py                         # 3-class mapping & 80/10/10 stratified split
-├── train_model.py                          # FP16 DistilBERT training loop with weighted loss
-├── evaluate_model.py                       # Test set evaluation and confusion matrix
-├── inference.py                            # SentimentPredictor class & 30-case benchmark
-├── inference_nlp.py                        # Root inference entrypoint
-├── pyproject.toml                          # Project dependencies (uv package manager)
-├── uv.lock                                 # Exact reproducible lockfile
-└── README.md                               # Complete project documentation
+┌──────────────────────────────────────────────────────────────────┐
+│                     OFFLINE BATCH PIPELINE                       │
+│  Kaggle CSVs → Qwen2.5-7B Translation → DistilBERT Sentiment    │
+│  → SVD Collaborative Filtering → TF-IDF Content-Based Filtering  │
+│  → Precomputed scores written to SQLite database                 │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │ precomputed rows
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│            DJANGO 6.1 + DRF REST API  (< 10 ms)                 │
+│  11 endpoints · No ML inference in request path · CORS enabled   │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │ JSON
+                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                    VANILLA JS FRONTEND                           │
+│  index · catalog · recommendations · nlp-lab · cart · analytics  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 11. How to Run Every Step
+## 📦 What Is Included in the Repo
 
-Ensure you have your environment set up with `uv`:
+| Component | Status | Notes |
+|---|---|---|
+| Django backend source | ✅ Fully included | `store/`, `recsys_backend/` |
+| Vanilla JS frontend | ✅ Fully included | `Frontend/` |
+| SVD Collaborative Filtering model | ✅ **Git LFS** | `models/svd_cf.pkl` (~30 MB) |
+| CBF TF-IDF artifacts | ✅ **Git LFS** | `models/processed/` (~3 MB) |
+| DistilBERT sentiment model | ⚠️ **Google Drive** | `models/best_model_binary/` (~255 MB) |
+| Raw Olist CSV dataset | ❌ Not included | Download from Kaggle (optional) |
+| SQLite database | ❌ Not included | Generated locally via seed commands |
+
+> **You can fully run the app without the DistilBERT model.** Recommendations and the API work fine; sentiment scores just default to 0 for new reviews.
+
+---
+
+## ✅ Prerequisites
+
+| Tool | Version | Install |
+|---|---|---|
+| Python | **3.13+** | [python.org](https://www.python.org/downloads/) |
+| Git | Any recent | [git-scm.com](https://git-scm.com/) |
+| Git LFS | Any recent | [git-lfs.com](https://git-lfs.com/) — required for model files |
+| `uv` package manager | Latest | See Step 3 below |
+
+> **Windows users:** Use **PowerShell** or **Windows Terminal**. Do NOT use the old `cmd.exe`.
+
+---
+
+## ⚡ Quick Start (5 Steps)
+
+Copy-paste this entire block:
+
+```bash
+# 1. Clone
+git clone https://github.com/AyobBleblo/NLP-for-Olist-dataset.git
+cd NLP-for-Olist-dataset
+
+# 2. Pull ML model files via Git LFS
+git lfs install
+git lfs pull
+
+# 3. Install uv  (Windows PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# 4. Install dependencies
+uv sync
+
+# 5. Set up database + run server
+uv run python manage.py migrate
+uv run python manage.py seed_olist_catalog
+uv run python manage.py runserver
+```
+
+**Backend API:** `http://127.0.0.1:8000/api/`
+
+Then open a **second terminal** for the frontend:
+```bash
+python -m http.server 5173 --directory Frontend
+```
+
+**Frontend:** `http://localhost:5173`
+
+---
+
+## 🔧 Detailed Setup
+
+### Step 1 — Clone the Repository
+
+```bash
+git clone https://github.com/AyobBleblo/NLP-for-Olist-dataset.git
+cd NLP-for-Olist-dataset
+```
+
+### Step 2 — Install Git LFS and Pull Model Files
 
 ```powershell
-# 1. Download Dataset
-uv run python downloddataset.py
+# Windows
+winget install GitHub.GitLFS
+```
+```bash
+# Mac
+brew install git-lfs
+# Linux
+sudo apt install git-lfs
+```
 
-# 2. Translate Portuguese Reviews to English
-uv run python translate_reviews.py
+```bash
+git lfs install
+git lfs pull
+```
 
-# 3. Prepare Stratified Train/Val/Test Splits
-uv run python prepare_data.py
+After this you should have:
+```
+models/
+  svd_cf.pkl                      ← ~30 MB  (Collaborative Filtering)
+  processed/
+    cbf_precomputed.npz           ← Content-Based Filtering scores
+    tfidf_matrix.npz              ← TF-IDF sparse matrix
+    products_features.parquet     ← Product feature vectors
+    tfidf_row_index.parquet       ← Row-index mapping
+```
 
-# 4. Train the DistilBERT Model (uses GPU)
-uv run python train_model.py
+### Step 3 — Install `uv`
 
-# 5. Evaluate Best Model on Held-Out Test Set
-uv run python evaluate_model.py
+```powershell
+# Windows PowerShell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+```bash
+# Mac / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-# 6. Run the 30-Case Benchmark (Easy to Hard)
-uv run python inference_nlp.py
+> **Alternative:** If you prefer pip/conda, activate your own virtual environment and run `pip install -r requirements.txt`. The packages are the same.
 
-# 7. Run Interactive Sentiment Mode
-uv run python inference_nlp.py --interactive
+### Step 4 — Install Dependencies
 
-# 8. Single Review Classification
-uv run python inference_nlp.py --text "Super fast delivery and the laptop is amazing!"
+```bash
+uv sync
+```
+
+Key packages installed: `django 6.1`, `djangorestframework`, `django-cors-headers`, `scikit-surprise`, `torch`, `transformers`, `scikit-learn`, `pandas`, `ftfy`.
+
+> ⚠️ **PyTorch note:** `pyproject.toml` pulls CUDA 12.4 wheels. If you only have a CPU, it still works — offline sentiment scoring will be slower, but the live API never uses the GPU.
+
+### Step 5 — Set Up the Database
+
+Run migrations first, then pick **one** seeding option:
+
+#### Option A — Full real Olist catalog ⭐ Recommended
+
+```bash
+uv run python manage.py migrate
+uv run python manage.py seed_olist_catalog
+```
+
+Creates: 30 categories · 100 products · 5 real customers · real reviews with DistilBERT scores · hybrid recommendations precomputed for all customers.
+
+#### Option B — Minimal 3-customer test (fastest)
+
+```bash
+uv run python manage.py migrate
+uv run python manage.py seed_test_scenario
+```
+
+Creates Alice, Bruno, and Carlos with purchase histories and recommendations. Good for quick API testing.
+
+#### Option C — Import from raw Kaggle CSV files
+
+```bash
+uv run python manage.py migrate
+uv run python manage.py import_data              # products from CSVs
+uv run python manage.py import_reviews           # reviews
+uv run python manage.py compute_recommendations  # hybrid scoring
+```
+
+Place the Olist CSV files in the `data/` folder. Download from [Kaggle](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce).
+
+### Step 6 — Run the Backend Server
+
+```bash
+uv run python manage.py runserver
+```
+
+API is live at `http://127.0.0.1:8000/api/`. Verify:
+
+```bash
+curl http://127.0.0.1:8000/api/
 ```
 
 ---
 
-## 12. Downstream Integration with Recommendation Engine
+## 🌐 Running the Frontend
 
-Now that we have a verified sentiment classification engine, here is how it directly improves product recommendations:
+Open a **second terminal** (keep Django running in the first):
 
-### 1. Product Sentiment Index (PSI)
-For every product $j$, aggregate sentiment predictions over all associated reviews:
-$$\text{PSI}_j = \frac{1}{|R_j|} \sum_{r \in R_j} \Big( P(\text{Positive}_r) - P(\text{Negative}_r) \Big) \in [-1, 1]$$
-This separates high-volume products that buyers actively love from high-volume products that buyers frequently return or complain about.
+```bash
+python -m http.server 5173 --directory Frontend
+```
 
-### 2. Hybrid Collaborative Filtering Re-Ranking
-When a Collaborative Filtering model (e.g., Matrix Factorization / LightFM / SVD) predicts an affinity score $\hat{y}_{u, j}$ for user $u$ and product $j$:
-$$\text{Score}_{\text{final}}(u, j) = \hat{y}_{u, j} \cdot \Big(1 + \alpha \cdot \text{PSI}_j\Big)$$
-Where $\alpha \in [0.1, 0.3]$ acts as a quality damper. Products with negative sentiment are penalized in the recommendation carousel, preventing bad recommendations and increasing customer trust.
+Open `http://localhost:5173` in your browser.
+
+### Pages
+
+| URL | Page |
+|---|---|
+| `http://localhost:5173/` | 🏠 Home — catalog, personas, sentiment reviews |
+| `http://localhost:5173/catalog.html` | 📦 Catalog — search, filter, sort |
+| `http://localhost:5173/recommendations.html` | 🎯 Personalized shelf with SVD/CBF/NLP score breakdown |
+| `http://localhost:5173/nlp-lab.html` | 🧪 NLP Lab — live sentiment tester + 20-case benchmark |
+| `http://localhost:5173/cart.html` | 🛒 Cart — add items, checkout |
+| `http://localhost:5173/analytics.html` | 📊 Model performance charts |
+| `http://localhost:5173/orders.html` | 📋 Order history |
+| `http://localhost:5173/product.html?id=<id>` | 🔍 Product detail |
+
+> CORS is already enabled in `settings.py` — no extra config needed.
+
+---
+
+## 🛠️ Management Commands Reference
+
+| Command | What it does | When to use |
+|---|---|---|
+| `migrate` | Creates all DB tables | Always run first |
+| `seed_olist_catalog` | 100 products, 5 customers, reviews, recommendations | ⭐ Recommended |
+| `seed_test_scenario` | 3 test customers (Alice / Bruno / Carlos) | Quick API testing |
+| `seed_clean_store` | Alternative catalog seeding | Optional alternative |
+| `import_data` | Imports products from Olist CSV files | Only if you have raw CSVs |
+| `import_reviews` | Imports reviews from translated CSV | After `import_data` |
+| `compute_recommendations` | Recomputes recommendations for all customers | After `import_data` |
+| `run_sentiment_batch` | DistilBERT sentiment scoring on all reviews | Needs `models/best_model_binary/` |
+| `diagnose_recommendations` | Debug info for recommendation scores | Debugging only |
+
+---
+
+## 🔌 API Endpoints Reference
+
+**Base URL:** `http://127.0.0.1:8000/api/`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/` | API root |
+| GET | `/api/categories/` | List all categories |
+| GET | `/api/categories/<id>/` | Category detail |
+| GET | `/api/products/` | List products (20 per page) |
+| GET | `/api/products/?search=furniture` | Search by name |
+| GET | `/api/products/?category=furniture_decor` | Filter by category |
+| GET | `/api/products/?ordering=-total_purchases` | Sort by popularity |
+| GET | `/api/products/<id>/` | Product detail |
+| GET | `/api/recommendations/<customer_id>/` | Top-10 recommendations |
+| GET | `/api/recommendations/<customer_id>/?n=5` | Top-N recommendations |
+| GET | `/api/cart/<customer_id>/` | View cart |
+| POST | `/api/cart/<customer_id>/add/` | Add item to cart |
+| PATCH | `/api/cart/<customer_id>/update/<item_id>/` | Update item quantity |
+| DELETE | `/api/cart/<customer_id>/remove/<item_id>/` | Remove item |
+| POST | `/api/cart/<customer_id>/checkout/` | Checkout + refresh recommendations |
+
+### Example curl Calls
+
+```bash
+# Products list
+curl http://127.0.0.1:8000/api/products/
+
+# Search
+curl "http://127.0.0.1:8000/api/products/?search=sports"
+
+# Recommendations (top 5)
+curl "http://127.0.0.1:8000/api/recommendations/c37cc6c1a59d81460a3059744f7ada1c/?n=5"
+
+# Add to cart
+curl -X POST http://127.0.0.1:8000/api/cart/c37cc6c1a59d81460a3059744f7ada1c/add/ \
+     -H "Content-Type: application/json" \
+     -d '{"product_id": 1, "quantity": 2}'
+
+# Checkout
+curl -X POST http://127.0.0.1:8000/api/cart/c37cc6c1a59d81460a3059744f7ada1c/checkout/
+```
+
+---
+
+## 👤 Test Customer IDs
+
+### After `seed_olist_catalog` (5 real Olist customers)
+
+| # | external_id | Preference |
+|---|---|---|
+| 1 | `06b8999e2fba1a1fbc88172c00ba8bc7` | housewares |
+| 2 | `18955e83d337fd6b2def6b18a428ac77` | computers_accessories |
+| 3 | `4e7b3452b3e31ade6d16c97f64a9e8f2` | sports_leisure |
+| 4 | `7a5a6efc09ef6f57c84c7a63bc58fede` | furniture_decor |
+| 5 | `8d50f5eadf50201ccdcedfb9e2ac8455` | health_beauty |
+
+### After `seed_test_scenario` (3 simple personas)
+
+| Customer | external_id | Preference |
+|---|---|---|
+| Alice Silva | `c37cc6c1a59d81460a3059744f7ada1c` | furniture_decor |
+| Bruno Santos | `3e2157f91502458bc58455fd798ed58a` | sports_leisure |
+| Carlos Costa | `feb2a9889d236875c3510880bf9576f3` | computers_accessories |
+
+---
+
+## 📁 Project Structure
+
+```
+NLP-for-Olist-dataset/
+│
+├── manage.py
+├── pyproject.toml                    # Python dependencies
+├── uv.lock
+│
+├── recsys_backend/                   # Django project config
+│   ├── settings.py                   # Settings + ML model paths
+│   ├── urls.py                       # Root URL router
+│   └── wsgi.py
+│
+├── store/                            # Main Django app
+│   ├── models.py                     # 9 database models
+│   ├── views.py                      # DRF API views (zero ML inference)
+│   ├── serializers.py
+│   ├── urls.py                       # 11 API routes
+│   ├── ml/
+│   │   └── loader.py                 # Singleton loaders (SVD, CBF, DistilBERT)
+│   └── management/commands/
+│       ├── seed_olist_catalog.py     # ⭐ Main seed command
+│       ├── seed_test_scenario.py
+│       ├── import_data.py
+│       ├── import_reviews.py
+│       ├── compute_recommendations.py
+│       ├── run_sentiment_batch.py
+│       └── diagnose_recommendations.py
+│
+├── models/
+│   ├── svd_cf.pkl                    # ✅ Git LFS (~30 MB)
+│   ├── best_model_binary/            # ⚠️ Google Drive (~255 MB)
+│   │   ├── config.json
+│   │   ├── model.safetensors
+│   │   ├── tokenizer.json
+│   │   └── tokenizer_config.json
+│   └── processed/                    # ✅ Git LFS (~3 MB)
+│       ├── cbf_precomputed.npz
+│       ├── tfidf_matrix.npz
+│       ├── products_features.parquet
+│       └── tfidf_row_index.parquet
+│
+├── Frontend/
+│   ├── index.html
+│   ├── catalog.html
+│   ├── recommendations.html
+│   ├── nlp-lab.html
+│   ├── cart.html
+│   ├── product.html
+│   ├── analytics.html
+│   ├── orders.html
+│   ├── css/style.css
+│   └── js/
+│       ├── api.js
+│       ├── config.js
+│       ├── ui.js
+│       └── pages/
+│
+├── inference.py                      # Standalone DistilBERT inference
+├── train_model.py                    # Model training script
+├── precompute_cbf.py
+├── prepare_data.py
+│
+├── README.md                         # This file
+├── SETUP.md                          # Frontend developer quick-start
+├── BACKEND_ARCHITECTURE_AND_PROCESS.md
+└── TEAM_BACKEND_GUIDE.md
+```
+
+---
+
+## 🧠 Optional: DistilBERT Sentiment Model Setup
+
+The fine-tuned DistilBERT checkpoint (~255 MB) is not on GitHub.
+You only need it to run sentiment analysis on new reviews.
+Everything else works without it.
+
+**Download from Google Drive:** *(ask the team for the link)*
+
+Place the files at:
+```
+models/best_model_binary/
+  config.json
+  model.safetensors       ← 255 MB
+  tokenizer.json
+  tokenizer_config.json
+```
+
+Then run:
+```bash
+uv run python manage.py run_sentiment_batch
+```
+
+---
+
+## ❓ Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| `uv: command not found` | Install uv — see Step 3 |
+| `git lfs: command not found` | Install Git LFS from git-lfs.com |
+| `models/svd_cf.pkl not found` | Run `git lfs pull` after cloning |
+| `ModuleNotFoundError` | Run `uv sync` |
+| Frontend shows "Cannot connect to API" | Make sure Django is running on port 8000 |
+| Port 8000 in use | Run `uv run python manage.py runserver 8001` |
+| `DLL load failed` on Windows | Use `uv run python` not plain `python` |
+| No recommendations shown | Run `uv run python manage.py seed_olist_catalog` |
+| Sentiment score is 0.0 everywhere | Normal — download `best_model_binary/` from Drive |
+| `No module named surprise` | Run `uv sync` — scikit-surprise is in pyproject.toml |
+
+---
+
+## 📚 Further Documentation
+
+| File | Contents |
+|---|---|
+| [`BACKEND_ARCHITECTURE_AND_PROCESS.md`](./BACKEND_ARCHITECTURE_AND_PROCESS.md) | Full architecture — DB schema, API flows, ML pipeline |
+| [`TEAM_BACKEND_GUIDE.md`](./TEAM_BACKEND_GUIDE.md) | Backend team reference |
+| [`SETUP.md`](./SETUP.md) | Frontend developer quick-start |
+| [`Frontend/README.md`](./Frontend/README.md) | Frontend architecture details |
+| [`mdFiles/`](./mdFiles/) | Additional NLP methodology docs |
+
+---
+
+*Samsung Innovation Campus — Smart Recommendation System for E-Commerce*
+*Built on the [Olist Brazilian E-Commerce dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce).*

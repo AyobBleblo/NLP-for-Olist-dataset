@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Slide 2.4 — Web Application & System Architecture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: #0b0f19;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      padding: 24px;
+      gap: 16px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .toolbar button {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+    }
+    .toolbar button:hover {
+      background: #1d4ed8;
+    }
+    .toolbar span {
+      color: #94a3b8;
+      font-size: 0.82rem;
+    }
+
+    /* 16:9 Slide Canvas */
+    .slide {
+      width: 1066px;
+      height: 600px;
+      background: #ffffff;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45);
+      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top Curved Banner */
+    .header-banner {
+      background: #0f3d99;
+      color: #ffffff;
+      padding: 14px 44px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom-left-radius: 40px;
+      border-bottom-right-radius: 40px;
+    }
+    .header-title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .header-unit {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+    }
+
+    /* Slide Body */
+    .slide-body {
+      flex: 1;
+      padding: 24px 46px 16px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .main-title {
+      text-align: center;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: #0f3d99;
+      margin-bottom: 22px;
+      letter-spacing: -0.01em;
+    }
+
+    /* 2-Column Content Grid */
+    .content-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      flex: 1;
+    }
+
+    /* Left Column */
+    .col-left {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .section-heading {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 1.02rem;
+      font-weight: 700;
+      color: #0f3d99;
+      margin-bottom: 4px;
+    }
+
+    .bullet-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 0.83rem;
+      line-height: 1.48;
+      color: #334155;
+    }
+    .bullet-list li {
+      position: relative;
+      padding-left: 18px;
+    }
+    .bullet-list li::before {
+      content: "•";
+      position: absolute;
+      left: 2px;
+      color: #0f3d99;
+      font-size: 1.2rem;
+      line-height: 1;
+      top: -2px;
+    }
+    .highlight {
+      color: #059669;
+      font-weight: 700;
+    }
+    .highlight-blue {
+      color: #0f3d99;
+      font-weight: 700;
+    }
+
+    /* Callout Card (Left Bottom) */
+    .callout-card {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 18px;
+      padding: 16px 20px;
+      margin-top: auto;
+    }
+    .callout-title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #1e3a8a;
+      margin-bottom: 4px;
+    }
+    .callout-sub {
+      font-size: 0.82rem;
+      color: #1e40af;
+      font-style: italic;
+      margin-bottom: 12px;
+    }
+    .callout-badge {
+      display: inline-block;
+      background: #fef3c7;
+      border: 1px solid #fde68a;
+      color: #b45309;
+      font-weight: 700;
+      font-size: 0.78rem;
+      padding: 7px 14px;
+      border-radius: 8px;
+      text-align: center;
+      width: 100%;
+    }
+    .callout-footnote {
+      font-size: 0.7rem;
+      color: #94a3b8;
+      font-style: italic;
+      margin-top: 8px;
+    }
+
+    /* Right Column */
+    .col-right {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* KPI Cards Row */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .kpi-card {
+      background: #eff6ff;
+      border: 1px solid #dbeafe;
+      border-radius: 12px;
+      padding: 16px 12px;
+      text-align: center;
+    }
+    .kpi-number {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: #0f3d99;
+      line-height: 1.1;
+      margin-bottom: 4px;
+    }
+    .kpi-label {
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: #475569;
+    }
+
+    /* Sub-card with Stack Specs */
+    .stack-specs {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px 16px;
+      text-align: center;
+      font-size: 0.8rem;
+      color: #334155;
+    }
+    .stack-specs strong {
+      color: #0f3d99;
+    }
+
+    /* Limitation / Architecture Principle Box (Right Bottom) */
+    .principle-box {
+      background: #fffbeb;
+      border: 1px solid #fef3c7;
+      border-radius: 12px;
+      padding: 16px 18px;
+      margin-top: auto;
+    }
+    .principle-title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #b45309;
+      margin-bottom: 6px;
+    }
+    .principle-text {
+      font-size: 0.79rem;
+      color: #78350f;
+      line-height: 1.45;
+    }
+
+    /* Slide Footer */
+    .slide-footer {
+      padding: 12px 46px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid #f1f5f9;
+      font-size: 0.74rem;
+      color: #64748b;
+    }
+    .footer-right {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+
+    @media print {
+      body { background: transparent; padding: 0; }
+      .toolbar { display: none; }
+      .slide { box-shadow: none; width: 100vw; height: 100vh; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="toolbar">
+    <button onclick="window.print()">Print / Save as PDF</button>
+    <span>16:9 Presentation Format &middot; Matches Samsung Innovation Campus Template</span>
+  </div>
+
+  <div class="slide">
+    <!-- Top Curved Banner -->
+    <header class="header-banner">
+      <div class="header-title">2.4 Web Application &amp; System Architecture</div>
+      <div class="header-unit">UNIT 02</div>
+    </header>
+
+    <!-- Slide Body -->
+    <main class="slide-body">
+      <h1 class="main-title">Full-Stack E-Commerce &amp; Recommender Architecture</h1>
+
+      <div class="content-grid">
+        <!-- Left Column: Implementation & Request Path -->
+        <div class="col-left">
+          <h2 class="section-heading">Technology Stack &amp; Design</h2>
+          <ul class="bullet-list">
+            <li>
+              <strong>Frontend Framework:</strong> Modular <strong>Vanilla ES6+ JavaScript</strong> with CSS custom properties (design system) and semantic HTML5 — zero heavy bundler overhead.
+            </li>
+            <li>
+              <strong>Backend Architecture:</strong> Built with <strong>Django 6.1</strong> and <strong>Django REST Framework (DRF)</strong> exposing 11 read-optimized REST endpoints.
+            </li>
+            <li>
+              <strong>Offline Batch Pipeline:</strong> All heavy ML models (NLLB-200 translation, DistilBERT sentiment, SVD &amp; CBF recommendation matrices) are precomputed into database tables.
+            </li>
+          </ul>
+
+          <!-- Callout Box -->
+          <div class="callout-card">
+            <div class="callout-title">Architecture Highlight: Performance</div>
+            <div class="callout-sub">&ldquo;Zero ML inference inside the web request path&rdquo;</div>
+            <div class="callout-badge">
+              Guaranteed Response Time: &lt; 50 ms
+            </div>
+            <div class="callout-footnote">
+              *Heavy model scoring runs in offline batch jobs, avoiding GPU server bottlenecks.
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Key Metrics & Technical Choice -->
+        <div class="col-right">
+          <h2 class="section-heading">Key Technical Metrics</h2>
+          
+          <div class="kpi-row">
+            <div class="kpi-card">
+              <div class="kpi-number">&lt; 50ms</div>
+              <div class="kpi-label">API Response Latency</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-number">11 Routes</div>
+              <div class="kpi-label">REST API Endpoints</div>
+            </div>
+          </div>
+
+          <div class="stack-specs">
+            Stack: <strong>Django 6.1</strong> &middot; <strong>DRF</strong> &middot; <strong>SQLite / PostgreSQL</strong> &middot; <strong>ES6+ Modules</strong>
+          </div>
+
+          <!-- Architecture Principle -->
+          <div class="principle-box">
+            <div class="principle-title">Key Architectural Decision</div>
+            <div class="principle-text">
+              <strong>Decoupled Asynchronous Intelligence:</strong><br>
+              Real-time user actions (cart additions, checkout) update transactional tables instantly. The recommendation engine reads precomputed latent vectors and hybrid scores, enabling high-concurrency e-commerce scale without request-time ML latency.
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Slide Footer -->
+    <footer class="slide-footer">
+      <div>Samsung Innovation Campus</div>
+      <div class="footer-right">
+        <div>Smart Recommendation System for E-Commerce</div>
+        <div>15</div>
+      </div>
+    </footer>
+  </div>
+
+</body>
+</html>

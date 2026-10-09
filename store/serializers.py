@@ -8,7 +8,17 @@ pre-computed fields are serialized.
 
 from rest_framework import serializers
 
-from store.models import Cart, CartItem, Category, Product, Recommendation
+from store.models import (
+    Cart,
+    CartItem,
+    Category,
+    Customer,
+    Order,
+    OrderItem,
+    Product,
+    Recommendation,
+    Review,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -174,15 +184,14 @@ class CartItemSerializer(serializers.ModelSerializer):
         fields = ["id", "product", "product_id", "quantity"]
 
 
-class CartItemWriteSerializer(serializers.ModelSerializer):
+class CartItemWriteSerializer(serializers.Serializer):
     """
     Used for add/update operations.
-    Accepts product_id (FK) and quantity; product is not embedded on write.
+    Accepts product_id (integer FK) and quantity.
     """
 
-    class Meta:
-        model = CartItem
-        fields = ["product_id", "quantity"]
+    product_id = serializers.IntegerField()
+    quantity = serializers.IntegerField(default=1)
 
     def validate_product_id(self, value):
         from store.models import Product
@@ -236,3 +245,59 @@ class RecommendationSerializer(serializers.ModelSerializer):
         model = Recommendation
         fields = ["id", "product", "score", "generated_at"]
         read_only_fields = fields
+
+
+# ---------------------------------------------------------------------------
+# Order / OrderItem
+# ---------------------------------------------------------------------------
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    product_external_id = serializers.CharField(source="product.external_id", read_only=True)
+    product_name = serializers.CharField(source="product.name_translated", default="", read_only=True)
+    product = ProductSummarySerializer(read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = ["id", "product_external_id", "product_name", "product", "price"]
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    customer_external_id = serializers.CharField(source="customer.external_id", read_only=True)
+    items = OrderItemSerializer(many=True, read_only=True)
+    total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Order
+        fields = [
+            "id",
+            "external_id",
+            "customer_external_id",
+            "purchased_at",
+            "status",
+            "total",
+            "items",
+        ]
+
+    def get_total(self, obj) -> float:
+        return sum(float(item.price) for item in obj.items.all())
+
+
+# ---------------------------------------------------------------------------
+# Review
+# ---------------------------------------------------------------------------
+
+class ReviewSerializer(serializers.ModelSerializer):
+    product_external_id = serializers.CharField(source="product.external_id", read_only=True)
+
+    class Meta:
+        model = Review
+        fields = [
+            "id",
+            "external_id",
+            "product_external_id",
+            "rating",
+            "comment_text",
+            "comment_text_translated",
+            "sentiment",
+            "sentiment_processed_at",
+        ]

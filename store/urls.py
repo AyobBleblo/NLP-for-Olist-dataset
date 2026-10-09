@@ -39,9 +39,12 @@ from store.views import (
     CartView,
     CategoryDetailView,
     CategoryListView,
+    OrderListView,
     ProductDetailView,
     ProductListView,
     RecommendationListView,
+    ReviewListView,
+    StatsView,
 )
 
 urlpatterns = [
@@ -86,6 +89,19 @@ urlpatterns = [
         CartCheckoutView.as_view(),
         name="cart-checkout",
     ),
+
+    # Orders
+    path(
+        "orders/<str:customer_external_id>/",
+        OrderListView.as_view(),
+        name="order-list",
+    ),
+
+    # Reviews
+    path("reviews/", ReviewListView.as_view(), name="review-list"),
+
+    # Platform Stats
+    path("stats/", StatsView.as_view(), name="stats"),
 
     # Recommendations (read-only)
     path(

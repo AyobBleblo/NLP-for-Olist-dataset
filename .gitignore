@@ -8,23 +8,23 @@ wheels/
 
 # Environment & secrets
 .env
-capstone_project.ipynb
 
-# Large datasets (raw CSVs — too large for git)
+# Large datasets (raw CSVs — too large for git, download from Kaggle)
 /data/
 
-# DistilBERT fine-tuned checkpoints (255 MB each — share via Google Drive)
+# DistilBERT fine-tuned checkpoints (~255 MB — shared via Google Drive)
+# Download link: ask the team
 /models/best_model/
 /models/best_model_binary/
-
-# Training logs (auto-generated, not needed in repo)
-/models/training_log*.json
-/models/evaluation_results*.json
 
 # Smaller ML model files ARE tracked via Git LFS:
 #   models/svd_cf.pkl              (~30 MB)
 #   models/processed/              (~3 MB total)
 # Do NOT add /models/ as a blanket ignore.
+
+# Evaluation results and training logs ARE included (useful for teammates)
+# /models/training_log*.json
+# /models/evaluation_results*.json
 
 # Local database (recreated via seed commands)
 db.sqlite3
@@ -37,3 +37,10 @@ db.sqlite3
 # Agent configuration & workflows
 .agents/
 .agent/
+
+# Scratch / temporary files
+scratch/
+
+# Jupyter notebooks (large outputs, managed separately)
+capstone_project.ipynb
+translate_reviews_llm_colab.ipynb

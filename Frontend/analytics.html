@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Evaluation dashboard for the DistilBERT sentiment classifier — real published metrics from the repository documentation.">
+  <title>Analytics · Olist Recommender</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main>
+    <div class="container">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Model evaluation</p>
+          <h1>Sentiment model &amp; catalogue analytics</h1>
+          <p class="lead">
+            The classification report, confusion matrix and training curves below are the published
+            results from the repository's own evaluation (<code>evaluate_model.py</code>, README §7–8).
+            Catalogue figures are computed live from the API data.
+          </p>
+        </div>
+        <div class="page-head__actions">
+          <span class="pill pill--ghost" id="analytics-source"></span>
+        </div>
+      </header>
+
+      <section class="section--tight">
+        <div class="grid grid--kpi" id="eval-kpis"></div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div><h2>Validation progression (4 epochs)</h2><p>Loss, accuracy and macro-F1 logged per epoch in <code>models/training_log.json</code>.</p></div>
+        </div>
+        <div class="grid grid--2">
+          <div class="card card--pad"><div class="chart-box chart-box--md"><canvas id="chart-loss"></canvas></div></div>
+          <div class="card card--pad"><div class="chart-box chart-box--md"><canvas id="chart-f1"></canvas></div></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div><h2>Test set — 4,095 held-out samples</h2><p>Per-class precision, recall and F1 from the classification report.</p></div>
+        </div>
+        <div class="grid grid--2">
+          <div class="card card--pad"><div class="chart-box chart-box--md"><canvas id="chart-classes"></canvas></div></div>
+          <div class="card card--pad"><div class="chart-box chart-box--md"><canvas id="chart-confusion"></canvas></div></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div><h2>Catalogue analytics — live from the API</h2><p>Computed from <code>/api/products/</code> and <code>/api/categories/</code> responses.</p></div>
+        </div>
+        <div class="grid grid--2">
+          <div class="card card--pad"><div class="chart-box chart-box--md"><canvas id="chart-cats"></canvas></div></div>
+          <div class="card card--pad"><div class="chart-box chart-box--md"><canvas id="chart-sentiment"></canvas></div></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div><h2>Published classification report</h2><p>Verbatim from the repository documentation.</p></div>
+        </div>
+        <pre class="code-block" id="classification-report"></pre>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script type="module" src="js/pages/analytics.js"></script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Browse curated Brazilian products across 30 departments on Olist Store.">
+  <title>Catalogue · Olist Store</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main>
+    <div class="container">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Explore Collections</p>
+          <h1>Product catalogue</h1>
+          <p class="lead">
+            Browse curated Brazilian products across 30 departments with verified review sentiment and instant search.
+          </p>
+        </div>
+        <div class="page-head__actions">
+          <span class="pill pill--ghost" id="result-count">Loading…</span>
+        </div>
+      </header>
+
+      <section class="section--tight" aria-label="Filters">
+        <div class="filter-bar">
+          <input class="input input--search" type="search" id="search-input"
+                 placeholder="Search products by name, title, or category…" aria-label="Search products">
+          <select class="select" id="category-select" aria-label="Filter by category">
+            <option value="">All categories</option>
+          </select>
+          <select class="select" id="ordering-select" aria-label="Order results">
+            <option value="-total_purchases,id">Most popular</option>
+            <option value="-avg_sentiment_score">Top review sentiment</option>
+            <option value="price">Price: low to high</option>
+            <option value="-price">Price: high to low</option>
+            <option value="id">Featured</option>
+          </select>
+        </div>
+        <div class="row row--wrap" style="margin-top:14px">
+          <div class="segmented" id="sentiment-filter" role="group" aria-label="Filter by sentiment">
+            <button type="button" data-tone="all" class="is-active">All</button>
+            <button type="button" data-tone="positive">Positive</button>
+            <button type="button" data-tone="mixed">Mixed</button>
+            <button type="button" data-tone="negative">Negative</button>
+            <button type="button" data-tone="none">Not scored</button>
+          </div>
+          <button class="btn btn--ghost btn--sm" type="button" id="clear-filters">Clear filters</button>
+          <span class="spacer"></span>
+          <span class="text-xs text-dim" id="filter-summary"></span>
+        </div>
+      </section>
+
+      <section class="section" id="catalog-section" aria-live="polite">
+        <div class="grid grid--products" id="product-grid"></div>
+        <div id="catalog-footer" style="margin-top:30px"></div>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="js/pages/catalog.js?v=2"></script>
+</body>
+</html>

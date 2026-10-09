@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Complete reference for the 11 real endpoints in the Olist recommendation backend, with live request testing.">
+  <title>API Reference · Olist Recommender</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main>
+    <div class="container">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">API reference</p>
+          <h1>All 11 endpoints</h1>
+          <p class="lead">
+            Transcribed from <code>backend/store/urls.py</code> — the single source of truth.
+            Endpoints advertised in SETUP.md but absent from urls.py are listed separately as gaps.
+          </p>
+        </div>
+        <div class="page-head__actions">
+          <span class="pill pill--ghost" id="api-base-pill"></span>
+        </div>
+      </header>
+
+      <section class="section--tight">
+        <div class="card card--pad">
+          <div class="row row--wrap" style="gap:18px">
+            <div class="field" style="flex:1;min-width:240px">
+              <label for="base-input">Base URL used for the “Send request” buttons</label>
+              <input class="input" id="base-input" type="text" spellcheck="false">
+            </div>
+            <button class="btn btn--ghost btn--sm" type="button" id="reset-base">Reset</button>
+          </div>
+          <p class="text-xs text-dim" style="margin-top:10px" id="base-note"></p>
+        </div>
+      </section>
+
+      <section class="section" id="endpoint-list"></section>
+
+      <section class="section">
+        <div class="section-head">
+          <div><h2>Documented but not implemented</h2><p>Read from the repository, not assumed.</p></div>
+        </div>
+        <div class="grid grid--2" id="gaps"></div>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="js/pages/api-reference.js"></script>
+</body>
+</html>
